@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>פתקי משימות</title>
+
+    <!-- PWA -->
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#38a169">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <meta name="apple-mobile-web-app-title" content="פתקים">
+    <link rel="apple-touch-icon" href="icon-192.png">
+
+    <link href="https://fonts.googleapis.com/css2?family=Rubik:wght@400;500;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <!-- סרגל כלים עליון -->
+    <div class="toolbar-top">
+        <button class="add-note-btn" id="addNoteBtn" title="הוסף פתק חדש" aria-label="הוסף פתק חדש" style="display: none;">➕</button>
+        <button class="guide-icon" id="guideIcon" title="פתח הדרכה" aria-label="פתח הדרכה">❗</button>
+        <button class="dark-mode-toggle" id="darkModeToggle" title="החלף למצב כהה" aria-label="החלף למצב כהה">☀️</button>
+        <button class="board-toggle" id="boardToggle" title="תצוגת לוח" aria-label="תצוגת לוח">📋</button>
+    </div>
+
+    <div class="main-container">
+        <!-- סרגל התיקיות בצד ימין -->
+        <div class="folders-sidebar" id="foldersSidebar">
+            <div class="folders-header">
+                <h2>תיקיות</h2>
+                <button class="create-folder-btn" id="create-folder-btn">+ הוסף תיקייה</button>
+            </div>
+            <div class="folders-list" id="folders-list">
+                <!-- התיקיות הקבועות -->
+                <div class="folder-item fixed-folder" data-folder="תיקייה כללית">
+                    <span class="folder-name">📁 תיקייה כללית</span>
+                    <div class="folder-color-picker">
+                        <span class="folder-color-preview" data-folder="תיקייה כללית"></span>
+                        <input type="color" class="folder-color-input" data-folder="תיקייה כללית">
+                    </div>
+                </div>
+                <div class="folder-item fixed-folder" data-folder="משימות שהושלמו">
+                    <span class="folder-name">✅ משימות שהושלמו</span>
+                    <div class="folder-color-picker">
+                        <span class="folder-color-preview" data-folder="משימות שהושלמו"></span>
+                        <input type="color" class="folder-color-input" data-folder="משימות שהושלמו">
+                    </div>
+                </div>
+                <div class="folder-item fixed-folder" data-folder="אשפה">
+                    <span class="folder-name">📁 אשפה</span>
+                    <div class="folder-color-picker">
+                        <span class="folder-color-preview" data-folder="אשפה"></span>
+                        <input type="color" class="folder-color-input" data-folder="אשפה">
+                    </div>
+                </div>
+                <!-- תיקיות דינמיות יתווספו כאן על ידי JavaScript -->
+            </div>
+            <!-- כפתורי גיבוי ושחזור בתחתית הסרגל -->
+            <div class="sidebar-backup-section">
+                <button class="backup-btn" id="backup-notes-btn" aria-label="שמור פתקים לקובץ">
+                    <svg aria-hidden="true" focusable="false" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                    שמור לקובץ
+                </button>
+                <button class="restore-btn" id="restore-notes-btn" aria-label="שחזר פתקים מקובץ">
+                    <svg aria-hidden="true" focusable="false" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                    שחזר מקובץ
+                </button>
+            </div>
+        </div>
+
+        <!-- כפתור שלושה פסים בצד ימין למעלה -->
+        <div class="sidebar-toggle" id="sidebarToggle" role="button" tabindex="0" aria-label="פתח תפריט תיקיות">☰</div>
+
+        <!-- תוכן ראשי: אזור יצירת הפתקים ואזור הפתקים -->
+        <div class="content" id="mainContent">
+            <h1>פתקי משימות</h1>
+            <div class="search-bar-wrapper">
+                <label for="search-input" class="sr-only">חיפוש פתקים</label>
+                <input type="text" id="search-input" placeholder="חפש פתקים...">
+            </div>
+            <div class="create-note" id="createNoteSection">
+                <label for="note-text" class="sr-only">תוכן הפתק</label>
+                <textarea id="note-text" placeholder="הקלד הערה"></textarea>
+                <label for="note-due" class="sr-only">זמן ביצוע</label>
+                <input type="datetime-local" id="note-due" placeholder="בחר זמן לביצוע">
+                <div class="color-options" role="group" aria-label="בחירת צבע פתק">
+                    <div class="color-circle pink" data-color="pink" role="radio" aria-label="ורוד" tabindex="0"></div>
+                    <div class="color-circle yellow" data-color="yellow" role="radio" aria-label="צהוב" tabindex="0"></div>
+                    <div class="color-circle purple" data-color="purple" role="radio" aria-label="סגול" tabindex="0"></div>
+                    <div class="color-circle green" data-color="green" role="radio" aria-label="ירוק" tabindex="0"></div>
+                    <div class="color-circle orange" data-color="orange" role="radio" aria-label="כתום" tabindex="0"></div>
+                    <div class="color-circle cyan" data-color="cyan" role="radio" aria-label="תכלת" tabindex="0"></div>
+                    <div class="color-circle red" data-color="red" role="radio" aria-label="אדום" tabindex="0"></div>
+                    <div class="color-circle note-color-picker" id="note-color-picker-btn" title="בחר צבע מותאם לפתק" role="button" aria-label="בחר צבע מותאם" tabindex="0">🎨</div>
+                    <input type="color" id="note-color-picker" class="color-picker-input" aria-label="בורר צבע מותאם">
+                </div>
+                <div class="buttons">
+                    <div class="button-group">
+                        <button class="create-btn" id="create-note-btn">הוסף הערה</button>
+                        <button class="cancel-btn" id="clear-form-btn">ביטול</button>
+                    </div>
+                </div>
+                <input type="file" id="restore-input" accept=".json" style="display: none;">
+            </div>
+            <div class="folder-container active" id="general-folder-container" data-folder="תיקייה כללית">
+                <div class="folder-title">תיקייה כללית</div>
+                <div class="notes-container" data-folder="תיקייה כללית"></div>
+            </div>
+            <div id="folders-notes-container">
+                <!-- תיקיות נוצרות דינמית על ידי loadFolders() -->
+            </div>
+            <button class="back-btn" id="backBtn" style="display: none;">חזור</button>
+        </div>
+
+        <!-- תצוגת לוח -->
+        <div class="board-view" id="boardView" style="display: none;">
+            <div class="board-search">
+                <div id="boardFolderBadge" style="display:none;"></div>
+                <input type="text" id="board-search-input" placeholder="חפש פתקים בלוח...">
+            </div>
+            <div id="boardDescriptionModal" class="guide-modal" style="display: none;">
+                <div class="guide-modal-content">
+                    <h2>ברוכים הבאים לתצוגת הלוח!</h2>
+                    <p>תצוגת הלוח מאפשרת לך לנהל את הפתקים שלך בצורה ויזואלית וגמישה:</p>
+                    <ul>
+                        <li><strong>צור פתק חדש:</strong> לחץ על ➕ בראש הלוח כדי להוסיף פתק חדש.</li>
+                        <li><strong>גרור ושנה גודל:</strong> גרור את הפתקים באמצעות הכותרת העליונה, ושנה את גודלם באמצעות הידיות בתחתית הפתק.</li>
+                        <li><strong>ערוך פתקים:</strong> לחץ על ✎ כדי לערוך את הטקסט ולעצב אותו (הדגשה, נטוי, קו תחתון, גודל פונט, צבע טקסט).</li>
+                        <li><strong>שייך לתיקייה:</strong> לחץ על 📁 כדי לשייך את הפתק לתיקייה מתוך התפריט.</li>
+                        <li><strong>מחק פתק:</strong> לחץ על ✖ כדי להעביר את הפתק לאשפה.</li>
+                        <li><strong>חזור לתצוגת רשימה:</strong> לחץ על "חזור לתצוגת רשימה" בתחתית הלוח.</li>
+                    </ul>
+                    <div style="display: flex; align-items: center; justify-content: flex-end; margin-top: 15px;">
+                        <label for="dontShowBoardDescription">אל תציג שוב</label>
+                        <input type="checkbox" id="dontShowBoardDescription" style="margin-left: 5px;">
+                        <button id="closeBoardDescriptionModal" style="margin-right: 10px;">אישור</button>
+                    </div>
+                </div>
+            </div>
+            <div class="note-container-board" id="boardContainer">
+                <!-- הפתקים יתווספו כאן דינמית על ידי JavaScript -->
+            </div>
+            <button class="back-btn" id="backToListBtn">חזור לתצוגת רשימה</button>
+        </div>
+    </div>
+
+    <div id="customAlert" class="custom-alert">
+        <p id="alertMessage"></p>
+        <button id="close-alert-btn">אישור</button>
+    </div>
+    <div id="backupModal" class="custom-alert" style="display: none;">
+        <p id="backupMessage"></p>
+        <button id="confirm-backup-btn">כן, גבה עכשיו</button>
+        <button id="cancel-backup-btn">לא, דלג</button>
+    </div>
+    <div id="guideModal" class="guide-modal" style="display: none;">
+        <div class="guide-modal-content">
+            <h2>ברוכים הבאים לאתר פתקי משימות!</h2>
+            <p>
+                האתר הזה נועד לעזור לך לנהל את המשימות והרעיונות שלך בצורה פשוטה ויעילה. תוכל ליצור פתקים, לארגן אותם בתיקיות, לקבוע זמני ביצוע, ולקבל התראות כשהזמן מגיע.
+            </p>
+            <h3 style="font-size: 1.3em; font-weight: 500; color: #1a202c; margin-bottom: 10px;">איך להשתמש באתר:</h3>
+            <ul>
+                <li><strong>צור פתק חדש:</strong> בתצוגת רשימה, הקלד את ההערה שלך בתיבה למעלה, בחר זמן לביצוע (אם רלוונטי), ובחר צבע לפתק. לחץ על "הוסף הערה" כדי לשמור. בתצוגת לוח, לחץ על ➕ כדי להוסיף פתק חדש.</li>
+                <li><strong>ארגן בתיקיות:</strong> לחץ על "הוסף תיקייה" בסרגל התיקיות כדי ליצור תיקייה חדשה. לאחר מכן, תוכל לשייך פתקים לתיקיות דרך תפריט הפתק (📁).</li>
+                <li><strong>קבל התראות:</strong> אם קבעת זמן לביצוע, תקבל התראה עם צליל כשהזמן יגיע. תוכל לסמן את הפתק כ"בוצע" (✔) או לדחות את הזמן (⏱️).</li>
+                <li><strong>ערוך פתקים:</strong> לחץ על סמל העריכה (✎) כדי לערוך את הטקסט, לשנות את הגודל, הסגנון, או הצבע של הטקסט.</li>
+                <li><strong>מחיקת פתקים:</strong> מחיקת פתק תעביר אותו לתיקיית "אשפה". מתיקיית "אשפה" ניתן למחוק את הפתק לצמיתות.</li>
+                <li><strong>גיבוי ושחזור:</strong> השתמש בלחצנים "שמור לקובץ" ו"שחזר מקובץ" כדי לגבות את הפתקים שלך או לשחזר אותם.</li>
+            </ul>
+            <p style="font-size: 0.95em; color: #4a5568; margin-top: 10px;">
+                האתר שומר את הפתקים שלך בדפדפן, אז ודא לא למחוק את נתוני הדפדפן אם אתה רוצה לשמור על הפתקים שלך!
+            </p>
+            <div style="display: flex; align-items: center; justify-content: flex-end; margin-top: 15px;">
+                <label for="dontShowAgain">אל תציג שוב</label>
+                <input type="checkbox" id="dontShowAgain" style="margin-left: 5px;">
+                <button id="closeGuideModal" style="margin-right: 10px;">אישור</button>
+            </div>
+        </div>
+    </div>
+    <!-- חלון מודאלי להוספת פתק חדש בתצוגת לוח -->
+    <div id="newNoteModal" class="new-note-modal" style="display: none;" role="dialog" aria-modal="true" aria-labelledby="newNoteModalTitle">
+        <div class="new-note-modal-content">
+            <h2 id="newNoteModalTitle">הוסף פתק חדש</h2>
+            <label for="new-note-text" class="sr-only">תוכן הפתק</label>
+            <textarea id="new-note-text" placeholder="הקלד הערה"></textarea>
+            <label for="new-note-due" class="sr-only">זמן ביצוע</label>
+            <input type="datetime-local" id="new-note-due" placeholder="בחר זמן לביצוע">
+            <div class="color-options" role="group" aria-label="בחירת צבע פתק">
+                <div class="color-circle pink" data-color="pink" role="radio" aria-label="ורוד" tabindex="0"></div>
+                <div class="color-circle yellow" data-color="yellow" role="radio" aria-label="צהוב" tabindex="0"></div>
+                <div class="color-circle purple" data-color="purple" role="radio" aria-label="סגול" tabindex="0"></div>
+                <div class="color-circle green" data-color="green" role="radio" aria-label="ירוק" tabindex="0"></div>
+                <div class="color-circle orange" data-color="orange" role="radio" aria-label="כתום" tabindex="0"></div>
+                <div class="color-circle cyan" data-color="cyan" role="radio" aria-label="תכלת" tabindex="0"></div>
+                <div class="color-circle red" data-color="red" role="radio" aria-label="אדום" tabindex="0"></div>
+                <div class="color-circle note-color-picker" id="new-note-color-picker-btn" title="בחר צבע מותאם לפתק" role="button" aria-label="בחר צבע מותאם" tabindex="0">🎨</div>
+                <input type="color" id="new-note-color-picker" class="color-picker-input" aria-label="בורר צבע מותאם">
+            </div>
+            <div class="buttons">
+                <button class="create-btn" id="confirm-new-note-btn">הוסף</button>
+                <button class="cancel-btn" id="cancel-new-note-btn">ביטול</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="script.js"></script>
+    <script>
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+          navigator.serviceWorker.register('./sw.js')
+            .then(() => console.log('SW registered'))
+            .catch((e) => console.log('SW error:', e));
+        });
+      }
+    </script>
+    <!-- הסקריפט של Cloudflare הוסר זמנית כדי למנוע שגיאות בעבודה מקומית. יש להחזיר אותו בעת העלאה לשרת: -->
+    <!-- <script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'93a6b0119828c01a',t:'MTc0NjM0Nzk2OC4wMDAwMDA='};var a=document.createElement('script');a.nonce='';a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script> -->
+</body>
+</html>
