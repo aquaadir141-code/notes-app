@@ -1419,6 +1419,81 @@ body.dark-mode .new-note-modal-content {
         top: 10px;
         right: 30px;
     }
+    #closeSidebarBtn {
+        display: block !important;
+    }
+}
+
+/* Mobile folder bottom sheet */
+#mobileFolderSheetOverlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.4);
+    z-index: 99998;
+    display: none;
+}
+#mobileFolderSheetOverlay.active {
+    display: block;
+}
+#mobileFolderSheet {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    z-index: 99999;
+    background: white;
+    border-radius: 16px 16px 0 0;
+    box-shadow: 0 -4px 24px rgba(0,0,0,0.2);
+    padding: 0 0 24px;
+    max-height: 60vh;
+    overflow-y: auto;
+    transform: translateY(100%);
+    transition: transform 0.28s ease;
+}
+#mobileFolderSheet.active {
+    transform: translateY(0);
+}
+body.dark-mode #mobileFolderSheet {
+    background: #2d3748;
+    color: #e2e8f0;
+}
+.mobile-folder-sheet-title {
+    text-align: center;
+    padding: 14px 16px 12px;
+    font-weight: 600;
+    font-size: 1.05em;
+    color: #1a202c;
+    border-bottom: 1px solid #e2e8f0;
+    position: sticky;
+    top: 0;
+    background: white;
+}
+body.dark-mode .mobile-folder-sheet-title {
+    color: #e2e8f0;
+    border-bottom-color: #4a5568;
+    background: #2d3748;
+}
+.mobile-folder-item {
+    padding: 14px 20px;
+    font-size: 1em;
+    cursor: pointer;
+    border-bottom: 1px solid #f0f0f0;
+    text-align: right;
+    transition: background-color 0.15s;
+    color: #2d3748;
+}
+body.dark-mode .mobile-folder-item {
+    color: #e2e8f0;
+    border-bottom-color: #4a5568;
+}
+.mobile-folder-item:last-child {
+    border-bottom: none;
+}
+.mobile-folder-item:active {
+    background-color: #e8f0fe;
+}
+body.dark-mode .mobile-folder-item:active {
+    background-color: #4a5568;
 }
 @media (max-width: 768px) {
     /* הסתרת תצוגת לוח במובייל — לא usable עם absolute positioning */
@@ -1510,11 +1585,11 @@ body.dark-mode .new-note-modal-content {
         height: 35px;
         font-size: 1.2em;
     }
-    .dark-mode-toggle {
-        left: 60px;
-    }
-    .board-toggle {
-        left: 105px;
+    .toolbar-top {
+        top: auto;
+        bottom: 20px;
+        left: auto;
+        right: 16px;
     }
     .note.board-note {
         width: 180px;

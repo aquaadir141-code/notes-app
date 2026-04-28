@@ -31,7 +31,10 @@
         <div class="folders-sidebar" id="foldersSidebar">
             <div class="folders-header">
                 <h2>תיקיות</h2>
-                <button class="create-folder-btn" id="create-folder-btn">+ הוסף תיקייה</button>
+                <div style="display:flex;gap:8px;align-items:center;">
+                    <button class="create-folder-btn" id="create-folder-btn">+ הוסף תיקייה</button>
+                    <button id="closeSidebarBtn" aria-label="סגור תפריט" style="display:none;background:none;border:none;font-size:1.4em;cursor:pointer;padding:4px 8px;color:#4a5568;line-height:1;">✕</button>
+                </div>
             </div>
             <div class="folders-list" id="folders-list">
                 <!-- התיקיות הקבועות -->
@@ -85,7 +88,7 @@
                 <label for="note-text" class="sr-only">תוכן הפתק</label>
                 <textarea id="note-text" placeholder="הקלד הערה"></textarea>
                 <label for="note-due" class="sr-only">זמן ביצוע</label>
-                <input type="datetime-local" id="note-due" placeholder="בחר זמן לביצוע">
+                <input type="datetime-local" id="note-due" placeholder="הגדרת תאריך יעד">
                 <div class="color-options" role="group" aria-label="בחירת צבע פתק">
                     <div class="color-circle pink" data-color="pink" role="radio" aria-label="ורוד" tabindex="0"></div>
                     <div class="color-circle yellow" data-color="yellow" role="radio" aria-label="צהוב" tabindex="0"></div>
@@ -188,7 +191,7 @@
             <label for="new-note-text" class="sr-only">תוכן הפתק</label>
             <textarea id="new-note-text" placeholder="הקלד הערה"></textarea>
             <label for="new-note-due" class="sr-only">זמן ביצוע</label>
-            <input type="datetime-local" id="new-note-due" placeholder="בחר זמן לביצוע">
+            <input type="datetime-local" id="new-note-due" placeholder="הגדרת תאריך יעד">
             <div class="color-options" role="group" aria-label="בחירת צבע פתק">
                 <div class="color-circle pink" data-color="pink" role="radio" aria-label="ורוד" tabindex="0"></div>
                 <div class="color-circle yellow" data-color="yellow" role="radio" aria-label="צהוב" tabindex="0"></div>

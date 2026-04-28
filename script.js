@@ -800,15 +800,18 @@ function createNoteElement(note, isDarkMode) {
     const menu = div.querySelector('.menu');
     menuBtn.onclick = (e) => {
         e.stopPropagation();
+        if (window.innerWidth <= 768) {
+            showFolderBottomSheet(note);
+            return;
+        }
         document.querySelectorAll('.menu').forEach(m => { if(m !== menu) m.style.display = 'none'; });
         document.querySelectorAll('.note').forEach(n => n.style.zIndex = '');
-
         if (menu.style.display === 'block') {
             menu.style.display = 'none';
             div.style.zIndex = '';
         } else {
             menu.style.display = 'block';
-            div.style.zIndex = '5000'; // הקפצת ה-z-index של הפתק עצמו
+            div.style.zIndex = '5000';
         }
     };
 
@@ -1006,6 +1009,48 @@ function deleteNote(id, permanent) {
     }
     localStorage.setItem('notes', JSON.stringify(notes));
     loadNotesWithoutFolderView();
+}
+
+function showFolderBottomSheet(note) {
+    let overlay = document.getElementById('mobileFolderSheetOverlay');
+    let sheet = document.getElementById('mobileFolderSheet');
+    if (!overlay) {
+        overlay = document.createElement('div');
+        overlay.id = 'mobileFolderSheetOverlay';
+        document.body.appendChild(overlay);
+    }
+    if (!sheet) {
+        sheet = document.createElement('div');
+        sheet.id = 'mobileFolderSheet';
+        document.body.appendChild(sheet);
+    }
+    const folders = getAllFolderNames();
+    sheet.innerHTML = `
+        <div class="mobile-folder-sheet-title">העבר לתיקייה</div>
+        ${folders.map(f => `<div class="mobile-folder-item" data-folder="${escapeHTML(f)}">${escapeHTML(f)}</div>`).join('')}
+    `;
+    sheet.querySelectorAll('.mobile-folder-item').forEach(item => {
+        item.onclick = () => {
+            const target = item.getAttribute('data-folder');
+            note.folder = target;
+            if (target === 'אשפה') { note.color = folderColors['אשפה'] || '#bdc3c7'; }
+            else if (folderColors[target]) { note.color = folderColors[target]; }
+            else { note.color = note.customColor || 'green'; }
+            updateNoteInStorage(note);
+            loadNotesWithoutFolderView();
+            closeFolderBottomSheet();
+        };
+    });
+    overlay.onclick = closeFolderBottomSheet;
+    overlay.classList.add('active');
+    requestAnimationFrame(() => sheet.classList.add('active'));
+}
+
+function closeFolderBottomSheet() {
+    const sheet = document.getElementById('mobileFolderSheet');
+    const overlay = document.getElementById('mobileFolderSheetOverlay');
+    if (sheet) sheet.classList.remove('active');
+    if (overlay) overlay.classList.remove('active');
 }
 
 function clearTrash() {
@@ -1358,6 +1403,19 @@ function setupEventListeners() {
         toggleBtn.addEventListener('click', () => sidebar.classList.add('active'));
         sidebar.addEventListener('mouseleave', () => sidebar.classList.remove('active'));
     }
+
+    const closeSidebarBtn = document.getElementById('closeSidebarBtn');
+    if (closeSidebarBtn && sidebar) {
+        closeSidebarBtn.onclick = () => sidebar.classList.remove('active');
+    }
+
+    document.addEventListener('touchstart', (e) => {
+        if (sidebar && sidebar.classList.contains('active') &&
+            !sidebar.contains(e.target) &&
+            toggleBtn && !toggleBtn.contains(e.target)) {
+            sidebar.classList.remove('active');
+        }
+    }, { passive: true });
 
     const oldCloseBtn = document.getElementById('closeGuideModal');
     if(oldCloseBtn) oldCloseBtn.onclick = handleGuideClose;
