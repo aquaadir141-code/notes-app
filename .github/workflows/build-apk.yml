@@ -8,6 +8,8 @@ on:
 jobs:
   build-apk:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
 
     steps:
       - name: Checkout code
@@ -46,11 +48,18 @@ jobs:
       - name: Find APK
         run: find android -name "*.apk"
 
+      - name: Locate APK
+        id: find_apk
+        run: |
+          APK=$(find android/app/build/outputs/apk -name "*.apk" | head -1)
+          echo "path=$APK" >> $GITHUB_OUTPUT
+          echo "Found APK: $APK"
+
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: notes-app-release
-          path: android/app/build/outputs/apk/release/app-release-unsigned.apk
+          name: notes-app-apk
+          path: ${{ steps.find_apk.outputs.path }}
           retention-days: 30
 
       - name: Create GitHub Release
@@ -62,11 +71,11 @@ jobs:
             ## APK לאנדרואיד - פתקי משימות
 
             **להתקנה:**
-            1. הורד את הקובץ `app-release-unsigned.apk`
-            2. העבר לטלפון
-            3. אפשר התקנה ממקורות לא ידועים בהגדרות
+            1. הורד את קובץ ה-APK מטה
+            2. העבר לטלפון האנדרואיד
+            3. הגדרות ← אבטחה ← אפשר התקנה ממקורות לא ידועים
             4. פתח את הקובץ והתקן
-          files: android/app/build/outputs/apk/release/app-release-unsigned.apk
+          files: ${{ steps.find_apk.outputs.path }}
           make_latest: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
