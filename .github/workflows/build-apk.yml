@@ -1,0 +1,154 @@
+name: Build Android APK
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Bubblewrap CLI
+        run: npm install -g @bubblewrap/cli
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android build tools
+        run: |
+          sdkmanager "build-tools;34.0.0" "platforms;android-34" "platform-tools"
+
+      - name: Create twa-manifest.json
+        run: |
+          cat > twa-manifest.json << 'EOF'
+          {
+            "packageId": "com.aquaadir141.notesapp",
+            "host": "aquaadir141-code.github.io",
+            "startUrl": "/notes-app/",
+            "name": "פתקי משימות",
+            "launcherName": "פתקים",
+            "display": "standalone",
+            "orientation": "portrait",
+            "themeColor": "#38a169",
+            "themeColorDark": "#38a169",
+            "navigationColor": "#38a169",
+            "navigationColorDark": "#38a169",
+            "navigationDividerColor": "#38a169",
+            "navigationDividerColorDark": "#38a169",
+            "backgroundColor": "#eef2f7",
+            "enableNotifications": true,
+            "startUrlParam": null,
+            "shortcuts": [],
+            "generatorApp": "bubblewrap-cli",
+            "webManifestUrl": "https://aquaadir141-code.github.io/notes-app/manifest.json",
+            "isChromeOSOnly": false,
+            "isMetaQuest": false,
+            "fullScopeUrl": "https://aquaadir141-code.github.io/notes-app/",
+            "minSdkVersion": 19,
+            "appVersionCode": 1,
+            "appVersionName": "1.0.0",
+            "iconUrl": "https://aquaadir141-code.github.io/notes-app/icon-512.png",
+            "maskableIconUrl": "https://aquaadir141-code.github.io/notes-app/icon-512.png",
+            "monochromeIconUrl": null,
+            "splashScreenFadeOutDuration": 300,
+            "enableSiteSettingsShortcut": true,
+            "fallbackType": "customtabs",
+            "alphaDependencies": { "enabled": false },
+            "enableDeleteCookies": false,
+            "additionalTrustedOrigins": [],
+            "retainedBundles": [],
+            "fingerprints": [],
+            "signingKey": {
+              "path": "./android.keystore",
+              "alias": "android"
+            },
+            "webAppManifest": {
+              "background_color": "#eef2f7",
+              "display": "standalone",
+              "icons": [
+                {
+                  "src": "https://aquaadir141-code.github.io/notes-app/icon-512.png",
+                  "sizes": "512x512",
+                  "type": "image/png"
+                }
+              ],
+              "lang": "he",
+              "name": "פתקי משימות",
+              "orientation": "portrait",
+              "scope": "/notes-app/",
+              "short_name": "פתקים",
+              "start_url": "/notes-app/",
+              "theme_color": "#38a169"
+            }
+          }
+          EOF
+
+      - name: Configure Bubblewrap
+        run: |
+          mkdir -p ~/.bubblewrap
+          cat > ~/.bubblewrap/config.json << EOF
+          {
+            "jdkPath": "$JAVA_HOME",
+            "androidSdkPath": "$ANDROID_SDK_ROOT"
+          }
+          EOF
+
+      - name: Generate keystore
+        run: |
+          keytool -genkeypair \
+            -v \
+            -keystore android.keystore \
+            -alias android \
+            -keyalg RSA \
+            -keysize 2048 \
+            -validity 10000 \
+            -storepass android123 \
+            -keypass android123 \
+            -dname "CN=Notes App, OU=App, O=Aquaadir, L=Israel, S=Israel, C=IL"
+
+      - name: Build APK with Bubblewrap
+        run: |
+          bubblewrap build \
+            --skipPwaValidation \
+            --signingKeyPath ./android.keystore \
+            --signingKeyAlias android \
+            --signingKeyPassword android123 \
+            --signingKeyStorePassword android123
+
+      - name: Find APK file
+        run: find . -name "*.apk" | head -10
+
+      - name: Upload APK as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: notes-app-apk
+          path: |
+            **/*.apk
+          retention-days: 30
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v1.0.0
+          name: "פתקי משימות v1.0.0"
+          body: "קובץ APK לאנדרואיד - אפליקציית פתקי משימות"
+          files: "**/*.apk"
+          make_latest: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
