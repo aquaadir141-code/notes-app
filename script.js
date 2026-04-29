@@ -431,12 +431,17 @@ function updateTopIcons() {
     if(addBtn) addBtn.innerHTML = ICONS.plus;
     const guideBtn = document.getElementById('guideIcon');
     if(guideBtn) guideBtn.innerHTML = ICONS.info;
-    const settingsBtn = document.getElementById('settingsIcon'); 
+    const settingsBtn = document.getElementById('settingsIcon');
     if(settingsBtn) settingsBtn.innerHTML = ICONS.settings;
     const darkBtn = document.getElementById('darkModeToggle');
     if(darkBtn) darkBtn.innerHTML = isDark ? ICONS.moon : ICONS.sun;
     const boardBtn = document.getElementById('boardToggle');
     if(boardBtn) boardBtn.innerHTML = isBoardViewActive ? ICONS.list : ICONS.grid;
+    // עדכון כפתורי סרגל צד (מובייל)
+    const sidebarGuideBtn = document.getElementById('sidebarGuideBtn');
+    if(sidebarGuideBtn) sidebarGuideBtn.innerHTML = ICONS.info;
+    const sidebarDarkBtn = document.getElementById('sidebarDarkBtn');
+    if(sidebarDarkBtn) sidebarDarkBtn.innerHTML = isDark ? ICONS.moon : ICONS.sun;
 }
 
 function showMainContent() {
@@ -1144,16 +1149,14 @@ async function backupNotes() {
     const blob = buildBackupBlob();
 
     // מובייל: שיתוף קובץ דרך Web Share API
-    if (navigator.canShare) {
+    if (navigator.share) {
         const shareFile = new File([blob], filename, { type: 'application/json' });
-        if (navigator.canShare({ files: [shareFile] })) {
-            try {
-                await navigator.share({ files: [shareFile], title: 'גיבוי פתקים' });
-                return;
-            } catch (e) {
-                if (e.name === 'AbortError') return;
-                // אם שיתוף נכשל — עובר לשיטה הבאה
-            }
+        try {
+            await navigator.share({ files: [shareFile], title: 'גיבוי פתקים' });
+            return;
+        } catch (e) {
+            if (e.name === 'AbortError') return;
+            // אם שיתוף נכשל — עובר לשיטה הבאה
         }
     }
 
@@ -1339,6 +1342,20 @@ async function requestNotificationPermission() {
     if (Notification.permission === 'default') {
         await Notification.requestPermission();
     }
+    updateNotifBtn();
+}
+
+function updateNotifBtn() {
+    const btn = document.getElementById('sidebarNotifBtn');
+    if (!btn) return;
+    if (!('Notification' in window)) { btn.style.display = 'none'; return; }
+    if (Notification.permission === 'granted') {
+        btn.textContent = '🔔'; btn.title = 'התראות פעילות'; btn.style.opacity = '0.45';
+    } else if (Notification.permission === 'denied') {
+        btn.textContent = '🔕'; btn.title = 'התראות חסומות — שנה בהגדרות הדפדפן'; btn.style.opacity = '0.45';
+    } else {
+        btn.textContent = '🔔'; btn.title = 'לחץ להפעלת התראות'; btn.style.opacity = '1';
+    }
 }
 
 function showDueNotification(text) {
@@ -1472,6 +1489,16 @@ function setupEventListeners() {
         closeSidebarBtn.onclick = () => sidebar.classList.remove('active');
     }
 
+    // כפתורי כלים בסרגל צד (מובייל)
+    const sidebarGuideBtn = document.getElementById('sidebarGuideBtn');
+    if (sidebarGuideBtn) sidebarGuideBtn.onclick = showGuideModal;
+    const sidebarDarkBtn = document.getElementById('sidebarDarkBtn');
+    if (sidebarDarkBtn) sidebarDarkBtn.onclick = toggleDarkMode;
+    const sidebarSoundBtn = document.getElementById('sidebarSoundBtn');
+    if (sidebarSoundBtn) sidebarSoundBtn.onclick = showSettingsModal;
+    const sidebarNotifBtn = document.getElementById('sidebarNotifBtn');
+    if (sidebarNotifBtn) sidebarNotifBtn.onclick = requestNotificationPermission;
+
     document.addEventListener('touchstart', (e) => {
         if (sidebar && sidebar.classList.contains('active') &&
             !sidebar.contains(e.target) &&
@@ -1577,7 +1604,7 @@ document.addEventListener('DOMContentLoaded', function() {
     loadFolders();
     showMainContent();
     setupDatetimePlaceholders();
-    requestNotificationPermission();
+    updateNotifBtn();
 
     if (!localStorage.getItem('hasSeenGuide_final_v1')) {
         showGuideModal();

@@ -32,7 +32,6 @@
             <div class="folders-header">
                 <button id="closeSidebarBtn" aria-label="סגור תפריט" style="display:none;background:none;border:none;font-size:1.4em;cursor:pointer;padding:4px 8px;color:#4a5568;line-height:1;">✕</button>
                 <h2>תיקיות</h2>
-                <button class="create-folder-btn" id="create-folder-btn">+ הוסף תיקייה</button>
             </div>
             <div class="folders-list" id="folders-list">
                 <!-- התיקיות הקבועות -->
@@ -61,6 +60,14 @@
             </div>
             <!-- כפתורי גיבוי ושחזור בתחתית הסרגל -->
             <div class="sidebar-backup-section">
+                <button class="create-folder-btn sidebar-create-folder-btn" id="create-folder-btn">+ הוסף תיקייה</button>
+                <!-- כפתורי כלים — מוצגים רק במובייל -->
+                <div class="sidebar-mobile-tools">
+                    <button class="sidebar-tool-btn" id="sidebarGuideBtn" title="הסבר על האתר"></button>
+                    <button class="sidebar-tool-btn" id="sidebarDarkBtn" title="מצב יום/לילה"></button>
+                    <button class="sidebar-tool-btn" id="sidebarSoundBtn" title="בחירת צליל">🎵</button>
+                    <button class="sidebar-tool-btn" id="sidebarNotifBtn" title="הפעל התראות">🔔</button>
+                </div>
                 <button class="backup-btn" id="backup-notes-btn" aria-label="שמור פתקים לקובץ">
                     <svg aria-hidden="true" focusable="false" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
                     שמור לקובץ

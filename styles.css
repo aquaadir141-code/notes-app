@@ -149,6 +149,36 @@ body.dark-mode .folders-header h2 {
     position: sticky;
     bottom: 0;
 }
+.sidebar-create-folder-btn {
+    width: 100%;
+    text-align: center;
+}
+.sidebar-mobile-tools {
+    display: none;
+    gap: 6px;
+    justify-content: space-around;
+    padding: 4px 0;
+}
+.sidebar-tool-btn {
+    flex: 1;
+    background: #f7fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 10px;
+    padding: 8px 4px;
+    font-size: 1.2em;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 44px;
+    transition: background-color 0.2s;
+    color: #2d3748;
+}
+.sidebar-tool-btn:hover { background: #edf2f7; }
+.sidebar-tool-btn svg { width: 20px; height: 20px; stroke: #2d3748; fill: none; }
+body.dark-mode .sidebar-tool-btn { background: #4a5568; border-color: #718096; color: #e2e8f0; }
+body.dark-mode .sidebar-tool-btn svg { stroke: #e2e8f0; }
+body.dark-mode .sidebar-tool-btn:hover { background: #718096; }
 body.dark-mode .sidebar-backup-section {
     border-top-color: #3a4a5c;
     background-color: #1e2a3a;
@@ -1424,6 +1454,16 @@ body.dark-mode .new-note-modal-content {
     }
     .search-bar-wrapper {
         padding-right: 55px;
+    }
+    /* הסתרת כפתורים מסרגל הכלים — מועברים לסרגל התיקיות */
+    #guideIcon, #darkModeToggle {
+        display: none !important;
+    }
+    #settingsFloatingBtn {
+        display: none !important;
+    }
+    .sidebar-mobile-tools {
+        display: flex;
     }
 }
 
