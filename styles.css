@@ -1413,7 +1413,7 @@ body.dark-mode .new-note-modal-content {
     }
     .content {
         margin-right: 0;
-        padding: 15px;
+        padding: 65px 15px 15px 15px;
     }
     .sidebar-toggle {
         top: 10px;
@@ -1422,6 +1422,36 @@ body.dark-mode .new-note-modal-content {
     #closeSidebarBtn {
         display: block !important;
     }
+    .search-bar-wrapper {
+        padding-right: 55px;
+    }
+}
+
+/* Datetime placeholder overlay for mobile */
+.datetime-wrapper {
+    position: relative;
+    width: 100%;
+    margin-bottom: 15px;
+}
+.datetime-wrapper input[type="datetime-local"] {
+    margin-bottom: 0;
+    position: relative;
+    z-index: 1;
+    background: transparent;
+}
+.datetime-fake-ph {
+    position: absolute;
+    right: 12px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: #a0aec0;
+    pointer-events: none;
+    font-size: 0.9em;
+    z-index: 0;
+    direction: rtl;
+}
+body.dark-mode .datetime-fake-ph {
+    color: #718096;
 }
 
 /* Mobile folder bottom sheet */

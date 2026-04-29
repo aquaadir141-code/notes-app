@@ -1046,6 +1046,26 @@ function showFolderBottomSheet(note) {
     requestAnimationFrame(() => sheet.classList.add('active'));
 }
 
+function setupDatetimePlaceholders() {
+    if (!window.matchMedia('(pointer: coarse)').matches) return;
+    document.querySelectorAll('input[type="datetime-local"]').forEach(input => {
+        const ph = input.getAttribute('placeholder');
+        if (!ph || input.closest('.datetime-wrapper')) return;
+        const wrapper = document.createElement('div');
+        wrapper.className = 'datetime-wrapper';
+        input.parentNode.insertBefore(wrapper, input);
+        wrapper.appendChild(input);
+        const fakeLabel = document.createElement('span');
+        fakeLabel.className = 'datetime-fake-ph';
+        fakeLabel.textContent = ph;
+        wrapper.appendChild(fakeLabel);
+        const toggle = () => { fakeLabel.style.display = input.value ? 'none' : ''; };
+        input.addEventListener('change', toggle);
+        input.addEventListener('input', toggle);
+        toggle();
+    });
+}
+
 function closeFolderBottomSheet() {
     const sheet = document.getElementById('mobileFolderSheet');
     const overlay = document.getElementById('mobileFolderSheetOverlay');
@@ -1121,7 +1141,23 @@ async function writeBlobToDir(dirHandle, filename) {
 async function backupNotes() {
     const today = new Date().toISOString().slice(0, 10);
     const filename = `notes_backup_${today}.json`;
+    const blob = buildBackupBlob();
 
+    // מובייל: שיתוף קובץ דרך Web Share API
+    if (navigator.canShare) {
+        const shareFile = new File([blob], filename, { type: 'application/json' });
+        if (navigator.canShare({ files: [shareFile] })) {
+            try {
+                await navigator.share({ files: [shareFile], title: 'גיבוי פתקים' });
+                return;
+            } catch (e) {
+                if (e.name === 'AbortError') return;
+                // אם שיתוף נכשל — עובר לשיטה הבאה
+            }
+        }
+    }
+
+    // דסקטופ: File System Access API
     if (!('showDirectoryPicker' in window)) {
         fallbackBackupDownload(filename);
         return;
@@ -1298,6 +1334,25 @@ function setupDragAndResize(el) {
     }
 }
 
+async function requestNotificationPermission() {
+    if (!('Notification' in window)) return;
+    if (Notification.permission === 'default') {
+        await Notification.requestPermission();
+    }
+}
+
+function showDueNotification(text) {
+    if (!('Notification' in window) || Notification.permission !== 'granted') return;
+    const sw = navigator.serviceWorker && navigator.serviceWorker.controller;
+    if (sw) {
+        sw.postMessage({ type: 'SHOW_NOTIFICATION', title: 'הזמן עבר! ⏰', body: text });
+    } else {
+        new Notification('הזמן עבר! ⏰', {
+            body: text, icon: './icon-192.png', dir: 'rtl', lang: 'he'
+        });
+    }
+}
+
 function checkDueTimes() {
     const notes = getNotes();
     const now = Date.now();
@@ -1308,6 +1363,7 @@ function checkDueTimes() {
             if (dueMs <= now) {
                 alertSound.play().catch(e => console.log('Audio blocked until interaction'));
                 showCustomAlertModal(n.text);
+                showDueNotification(n.text);
                 n.notified = true;
                 changed = true;
             }
@@ -1373,6 +1429,13 @@ function toggleBoardView() {
         document.body.style.overflowX = 'auto';
         const addBtn = document.getElementById('addNoteBtn');
         if(addBtn) addBtn.style.display = 'inline-block';
+        // אם אין תיקייה פעילה — ברירת מחדל: תיקייה כללית
+        if (!isFolderViewActive) {
+            selectedFolder = 'תיקייה כללית';
+            isFolderViewActive = true;
+        }
+        const badge = document.getElementById('boardFolderBadge');
+        if (badge) { badge.textContent = '📁 ' + selectedFolder; badge.style.display = 'inline-block'; }
         loadNotesWithoutFolderView();
     } else {
         if(main) main.style.display = 'block';
@@ -1512,7 +1575,9 @@ document.addEventListener('DOMContentLoaded', function() {
     createSettingsFloatingButton();
     updateTopIcons();
     loadFolders();
-    showMainContent(); 
+    showMainContent();
+    setupDatetimePlaceholders();
+    requestNotificationPermission();
 
     if (!localStorage.getItem('hasSeenGuide_final_v1')) {
         showGuideModal();

@@ -30,11 +30,9 @@
         <!-- סרגל התיקיות בצד ימין -->
         <div class="folders-sidebar" id="foldersSidebar">
             <div class="folders-header">
+                <button id="closeSidebarBtn" aria-label="סגור תפריט" style="display:none;background:none;border:none;font-size:1.4em;cursor:pointer;padding:4px 8px;color:#4a5568;line-height:1;">✕</button>
                 <h2>תיקיות</h2>
-                <div style="display:flex;gap:8px;align-items:center;">
-                    <button class="create-folder-btn" id="create-folder-btn">+ הוסף תיקייה</button>
-                    <button id="closeSidebarBtn" aria-label="סגור תפריט" style="display:none;background:none;border:none;font-size:1.4em;cursor:pointer;padding:4px 8px;color:#4a5568;line-height:1;">✕</button>
-                </div>
+                <button class="create-folder-btn" id="create-folder-btn">+ הוסף תיקייה</button>
             </div>
             <div class="folders-list" id="folders-list">
                 <!-- התיקיות הקבועות -->
