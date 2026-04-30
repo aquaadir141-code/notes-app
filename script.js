@@ -1063,11 +1063,7 @@ function setupDatetimePlaceholders() {
         const fakeLabel = document.createElement('span');
         fakeLabel.className = 'datetime-fake-ph';
         fakeLabel.textContent = ph;
-        wrapper.appendChild(fakeLabel);
-        const toggle = () => { fakeLabel.style.display = input.value ? 'none' : ''; };
-        input.addEventListener('change', toggle);
-        input.addEventListener('input', toggle);
-        toggle();
+        wrapper.insertBefore(fakeLabel, input);
     });
 }
 
@@ -1338,21 +1334,35 @@ function setupDragAndResize(el) {
 }
 
 async function requestNotificationPermission() {
-    if (!('Notification' in window)) return;
-    if (Notification.permission === 'default') {
-        await Notification.requestPermission();
+    if (!('Notification' in window) || !window.isSecureContext) {
+        showAlert('התראות דורשות חיבור מאובטח (HTTPS).\nכדי להפעיל: פרוס את האפליקציה ב-HTTPS והוסף אותה למסך הבית.');
+        return;
     }
+    if (Notification.permission === 'denied') {
+        showAlert('ההתראות חסומות.\nכדי לאפשר: הגדרות דפדפן ← הרשאות אתר ← התראות ← מצא את האתר ← אפשר.');
+        return;
+    }
+    if (Notification.permission === 'granted') {
+        showToast('התראות כבר מופעלות ✓');
+        updateNotifBtn();
+        return;
+    }
+    const result = await Notification.requestPermission();
+    if (result === 'granted') showToast('התראות הופעלו! 🔔');
     updateNotifBtn();
 }
 
 function updateNotifBtn() {
     const btn = document.getElementById('sidebarNotifBtn');
     if (!btn) return;
-    if (!('Notification' in window)) { btn.style.display = 'none'; return; }
+    if (!('Notification' in window) || !window.isSecureContext) {
+        btn.textContent = '🔕'; btn.title = 'התראות — דורשות HTTPS'; btn.style.opacity = '0.5';
+        return;
+    }
     if (Notification.permission === 'granted') {
         btn.textContent = '🔔'; btn.title = 'התראות פעילות'; btn.style.opacity = '0.45';
     } else if (Notification.permission === 'denied') {
-        btn.textContent = '🔕'; btn.title = 'התראות חסומות — שנה בהגדרות הדפדפן'; btn.style.opacity = '0.45';
+        btn.textContent = '🔕'; btn.title = 'התראות חסומות — שנה בהגדרות'; btn.style.opacity = '0.5';
     } else {
         btn.textContent = '🔔'; btn.title = 'לחץ להפעלת התראות'; btn.style.opacity = '1';
     }

@@ -1453,7 +1453,7 @@ body.dark-mode .new-note-modal-content {
         display: block !important;
     }
     .search-bar-wrapper {
-        padding-right: 55px;
+        padding-right: 0;
     }
     /* הסתרת כפתורים מסרגל הכלים — מועברים לסרגל התיקיות */
     #guideIcon, #darkModeToggle {
@@ -1467,31 +1467,28 @@ body.dark-mode .new-note-modal-content {
     }
 }
 
-/* Datetime placeholder overlay for mobile */
+/* תווית קבועה מעל שדה תאריך (מובייל) */
 .datetime-wrapper {
-    position: relative;
     width: 100%;
     margin-bottom: 15px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
 }
 .datetime-wrapper input[type="datetime-local"] {
     margin-bottom: 0;
-    position: relative;
-    z-index: 1;
-    background: transparent;
 }
 .datetime-fake-ph {
-    position: absolute;
-    right: 12px;
-    top: 50%;
-    transform: translateY(-50%);
-    color: #a0aec0;
+    font-size: 0.82em;
+    font-weight: 500;
+    color: #718096;
+    text-align: right;
+    padding-right: 2px;
     pointer-events: none;
-    font-size: 0.9em;
-    z-index: 0;
-    direction: rtl;
+    letter-spacing: 0.01em;
 }
 body.dark-mode .datetime-fake-ph {
-    color: #718096;
+    color: #a0aec0;
 }
 
 /* Mobile folder bottom sheet */
@@ -1664,5 +1661,43 @@ body.dark-mode .mobile-folder-item:active {
     .note.board-note {
         width: 180px;
         height: 180px;
+    }
+
+    /* מודאל הדרכה — bottom sheet במובייל */
+    .guide-modal {
+        align-items: flex-end;
+    }
+    .guide-modal-content {
+        width: 100%;
+        max-width: 100%;
+        max-height: 88vh;
+        border-radius: 20px 20px 0 0;
+        padding: 20px 16px 28px;
+    }
+    .guide-modal-content h2 {
+        font-size: 1.3em;
+        margin-bottom: 12px;
+    }
+    .guide-columns {
+        flex-direction: column !important;
+        gap: 10px;
+    }
+    .guide-modal-content ul {
+        padding-right: 8px;
+        font-size: 0.95em;
+    }
+    .guide-modal-content li {
+        margin-bottom: 10px;
+        line-height: 1.5;
+    }
+    .guide-modal-content button {
+        width: 100%;
+        padding: 14px;
+        font-size: 1em;
+        border-radius: 10px;
+    }
+    .copyright-footer {
+        font-size: 0.8em;
+        padding: 10px;
     }
 }
