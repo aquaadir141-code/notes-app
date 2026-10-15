@@ -1,7 +1,10 @@
 package com.aquaadir141.notesapp;
 
+import android.Manifest;
 import android.app.Activity;
+import android.content.pm.PackageManager;
 import android.graphics.Color;
+import android.os.Build;
 import android.os.Bundle;
 import android.view.Window;
 import android.webkit.WebChromeClient;
@@ -12,7 +15,11 @@ import android.webkit.WebViewClient;
 public class MainActivity extends Activity {
 
     private static final String APP_URL = "https://aquaadir141-code.github.io/notes-app/";
+    private static final int REQUEST_NOTIFICATIONS = 1;
     private WebView webView;
+
+    /** Read by ReminderReceiver: while the app is on screen the page alerts by itself. */
+    static volatile boolean isInForeground = false;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -33,12 +40,30 @@ public class MainActivity extends Activity {
 
         webView.setWebViewClient(new WebViewClient());
         webView.setWebChromeClient(new WebChromeClient());
+        webView.addJavascriptInterface(new ReminderBridge(this), "NativeReminders");
+
+        if (Build.VERSION.SDK_INT >= 33
+                && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS}, REQUEST_NOTIFICATIONS);
+        }
 
         if (savedInstanceState != null) {
             webView.restoreState(savedInstanceState);
         } else {
             webView.loadUrl(APP_URL);
         }
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        isInForeground = true;
+    }
+
+    @Override
+    protected void onPause() {
+        isInForeground = false;
+        super.onPause();
     }
 
     @Override

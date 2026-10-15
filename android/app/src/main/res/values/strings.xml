@@ -1,4 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">פתקי משימות</string>
+    <string name="reminder_title">הזמן עבר! ⏰</string>
+    <string name="reminder_channel_name">תזכורות למשימות</string>
 </resources>
