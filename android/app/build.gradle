@@ -10,14 +10,32 @@ android {
         applicationId "com.aquaadir141.notesapp"
         minSdk 21
         targetSdk 34
-        versionCode 1
-        versionName "1.0.0"
+        // CI passes the workflow run number so every release has a higher versionCode
+        // than the one before and Android accepts it as an update.
+        versionCode((System.getenv("VERSION_CODE") ?: "1").toInteger())
+        versionName System.getenv("VERSION_NAME") ?: "1.0.0"
+    }
+
+    // Release signing comes from a stable keystore (see .github/workflows/build-apk.yml).
+    // Every release must be signed with the same key, otherwise Android refuses to
+    // install it over the previous version.
+    def releaseKeystore = System.getenv("ANDROID_KEYSTORE_PATH")
+    signingConfigs {
+        if (releaseKeystore) {
+            release {
+                storeFile file(releaseKeystore)
+                storePassword System.getenv("ANDROID_KEYSTORE_PASSWORD")
+                keyAlias System.getenv("ANDROID_KEY_ALIAS")
+                keyPassword System.getenv("ANDROID_KEY_PASSWORD")
+            }
+        }
     }
 
     buildTypes {
         release {
             minifyEnabled false
-            signingConfig signingConfigs.debug
+            // Local builds without the keystore fall back to the debug key.
+            signingConfig releaseKeystore ? signingConfigs.release : signingConfigs.debug
         }
         debug {
             applicationIdSuffix ""

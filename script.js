@@ -1326,9 +1326,92 @@ async function writeBlobToDir(dirHandle, filename) {
     await writable.close();
 }
 
+// אפליקציית האנדרואיד (WebView) — אין בה הורדות או שיתוף רגילים
+function isAndroidWebView() {
+    return /Android/.test(navigator.userAgent) && /; wv\)/.test(navigator.userAgent);
+}
+
+function buildBackupJson() {
+    const data = { notes: getNotes(), folders: getFolders(), folderColors, notePositions };
+    return JSON.stringify(data, null, 2);
+}
+
+function showTextBackupModal(mode) {
+    const existing = document.getElementById('_textBackupModal');
+    if (existing) existing.remove();
+    const dark = document.body.classList.contains('dark-mode');
+
+    const overlay = document.createElement('div');
+    overlay.id = '_textBackupModal';
+    overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.45);display:flex;justify-content:center;align-items:center;z-index:99999;direction:rtl;';
+    const box = document.createElement('div');
+    box.style.cssText = `background:${dark ? '#2d3748' : 'white'};color:${dark ? '#e2e8f0' : 'inherit'};padding:22px;border-radius:14px;max-width:420px;width:92%;text-align:center;box-shadow:0 8px 30px rgba(0,0,0,0.18);`;
+
+    const msg = document.createElement('p');
+    msg.style.cssText = 'font-size:0.95rem;margin-bottom:12px;line-height:1.5;';
+    const area = document.createElement('textarea');
+    area.style.cssText = 'width:100%;height:160px;direction:ltr;font-size:0.75rem;border-radius:8px;border:1px solid #ccc;padding:8px;box-sizing:border-box;';
+    const btnRow = document.createElement('div');
+    btnRow.style.cssText = 'display:flex;gap:10px;justify-content:center;margin-top:12px;flex-wrap:wrap;';
+    const mkBtn = (text, bg) => {
+        const b = document.createElement('button');
+        b.textContent = text;
+        b.style.cssText = `background:${bg};color:white;border:none;border-radius:8px;padding:10px 18px;font-size:0.95rem;cursor:pointer;`;
+        btnRow.appendChild(b);
+        return b;
+    };
+
+    if (mode === 'backup') {
+        msg.textContent = 'העתק את הטקסט הזה ושמור אותו במקום בטוח (למשל שלח לעצמך במייל). כדי לשחזר, הדבק אותו ב"שחזר מקובץ".';
+        area.value = buildBackupJson();
+        area.readOnly = true;
+        mkBtn('העתק', '#48bb78').onclick = async () => {
+            area.select();
+            let copied = false;
+            try { await navigator.clipboard.writeText(area.value); copied = true; } catch (e) {}
+            if (!copied) { try { copied = document.execCommand('copy'); } catch (e) {} }
+            msg.textContent = copied ? 'הועתק! הדבק ושמור אותו במקום בטוח.' : 'סמן את כל הטקסט והעתק ידנית.';
+        };
+    } else {
+        msg.textContent = 'הדבק כאן את טקסט הגיבוי, או בחר קובץ גיבוי.';
+        area.placeholder = '{ "notes": ... }';
+        mkBtn('שחזר', '#48bb78').onclick = () => {
+            try {
+                applyBackupData(JSON.parse(area.value));
+                overlay.remove();
+            } catch (e) {
+                msg.textContent = 'הטקסט אינו גיבוי תקין. ודא שהדבקת את כולו.';
+            }
+        };
+        mkBtn('בחר קובץ', '#4299e1').onclick = () => {
+            overlay.remove();
+            document.getElementById('restore-input').click();
+        };
+    }
+    mkBtn('סגור', '#a0aec0').onclick = () => overlay.remove();
+
+    box.appendChild(msg);
+    box.appendChild(area);
+    box.appendChild(btnRow);
+    overlay.appendChild(box);
+    document.body.appendChild(overlay);
+}
+
 async function backupNotes() {
     const today = new Date().toISOString().slice(0, 10);
     const filename = `notes_backup_${today}.json`;
+
+    // אפליקציית אנדרואיד חדשה: שמירה לקובץ דרך האפליקציה
+    if (window.AndroidBackup) {
+        window.AndroidBackup.save(filename, buildBackupJson());
+        return;
+    }
+    // אפליקציית אנדרואיד ישנה: אין דרך לשמור קובץ, לכן מציגים טקסט להעתקה
+    if (isAndroidWebView()) {
+        showTextBackupModal('backup');
+        return;
+    }
+
     const blob = buildBackupBlob();
 
     // מובייל: שיתוף קובץ דרך Web Share API
@@ -1384,22 +1467,26 @@ async function autoBackupIfTime() {
     } catch (e) {}
 }
 
+function applyBackupData(data) {
+    if (!data || !Array.isArray(data.notes)) throw new Error('invalid backup');
+    localStorage.setItem('notes', JSON.stringify(data.notes));
+    if (data.folders) localStorage.setItem('folders', JSON.stringify(data.folders));
+    if (data.folderColors) localStorage.setItem('folderColors', JSON.stringify(data.folderColors));
+    if (data.notePositions) localStorage.setItem('notePositions', JSON.stringify(data.notePositions));
+    folderColors = data.folderColors || {};
+    notePositions = data.notePositions || {};
+    loadFolders();
+    loadNotesWithoutFolderView();
+    showAlert('שוחזר בהצלחה! 🎉');
+}
+
 function restoreNotes(event) {
     const file = event.target.files[0];
     if (!file) return;
     const reader = new FileReader();
     reader.onload = function(e) {
         try {
-            const data = JSON.parse(e.target.result);
-            if (data.notes) localStorage.setItem('notes', JSON.stringify(data.notes));
-            if (data.folders) localStorage.setItem('folders', JSON.stringify(data.folders));
-            if (data.folderColors) localStorage.setItem('folderColors', JSON.stringify(data.folderColors));
-            if (data.notePositions) localStorage.setItem('notePositions', JSON.stringify(data.notePositions));
-            folderColors = data.folderColors || {};
-            notePositions = data.notePositions || {};
-            loadFolders();
-            loadNotesWithoutFolderView();
-            showAlert('שוחזר בהצלחה! 🎉');
+            applyBackupData(JSON.parse(e.target.result));
         } catch (err) {
             showAlert('שגיאה בקובץ הגיבוי. ודא שהקובץ תקין.');
         }
@@ -1746,7 +1833,8 @@ function setupEventListeners() {
     const restoreBtn = document.getElementById('restore-notes-btn');
     const restoreInput = document.getElementById('restore-input');
     if (restoreBtn && restoreInput) {
-        restoreBtn.onclick = () => restoreInput.click();
+        // באפליקציית אנדרואיד אפשר לשחזר גם מטקסט שהועתק
+        restoreBtn.onclick = () => isAndroidWebView() ? showTextBackupModal('restore') : restoreInput.click();
         restoreInput.onchange = restoreNotes;
     }
 
