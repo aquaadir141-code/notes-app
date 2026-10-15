@@ -36,7 +36,7 @@ public class ReminderReceiver extends BroadcastReceiver {
         Notification.Builder builder = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
                 ? new Notification.Builder(context, CHANNEL_ID)
                 : new Notification.Builder(context);
-        builder.setSmallIcon(R.mipmap.ic_launcher)
+        builder.setSmallIcon(R.drawable.ic_launcher_monochrome)
                 .setContentTitle(context.getString(R.string.reminder_title))
                 .setContentText(text)
                 .setStyle(new Notification.BigTextStyle().bigText(text))
