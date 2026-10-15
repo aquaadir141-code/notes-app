@@ -7,33 +7,54 @@
 
     <!-- PWA -->
     <link rel="manifest" href="manifest.json">
-    <meta name="theme-color" content="#38a169">
+    <meta name="theme-color" content="#f5f6f8" media="(prefers-color-scheme: light)">
+    <meta name="theme-color" content="#0c1015" media="(prefers-color-scheme: dark)">
+    <meta name="color-scheme" content="light dark">
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="default">
     <meta name="apple-mobile-web-app-title" content="פתקים">
     <link rel="apple-touch-icon" href="icon-192.png">
 
-    <link href="https://fonts.googleapis.com/css2?family=Rubik:wght@400;500;700&display=swap" rel="stylesheet">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Rubik:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <script>
+      // מצב כהה לפני הציור הראשון, כדי שלא יהבהב מסך בהיר
+      (function () {
+        try {
+          var saved = localStorage.getItem('darkMode');
+          var dark = saved === null ? window.matchMedia('(prefers-color-scheme: dark)').matches : saved === 'true';
+          if (dark) document.documentElement.classList.add('dark-pending');
+        } catch (e) {}
+      })();
+    </script>
     <link rel="stylesheet" href="styles.css">
 </head>
 <body>
+    <script>if (document.documentElement.classList.contains('dark-pending')) document.body.classList.add('dark-mode');</script>
+    <a class="skip-link" href="#mainContent">דלג לתוכן</a>
+
     <!-- סרגל כלים עליון -->
-    <div class="toolbar-top">
-        <button class="add-note-btn" id="addNoteBtn" title="הוסף פתק חדש" aria-label="הוסף פתק חדש" style="display: none;">➕</button>
-        <button class="guide-icon" id="guideIcon" title="פתח הדרכה" aria-label="פתח הדרכה">❗</button>
-        <button class="dark-mode-toggle" id="darkModeToggle" title="החלף למצב כהה" aria-label="החלף למצב כהה">☀️</button>
-        <button class="board-toggle" id="boardToggle" title="תצוגת לוח" aria-label="תצוגת לוח">📋</button>
+    <div class="toolbar-top" role="toolbar" aria-label="כלים">
+        <button class="add-note-btn" id="addNoteBtn" title="הוסף פתק חדש" aria-label="הוסף פתק חדש" style="display: none;"></button>
+        <button class="guide-icon" id="guideIcon" title="פתח הדרכה" aria-label="פתח הדרכה"></button>
+        <button class="dark-mode-toggle" id="darkModeToggle" title="החלף למצב כהה" aria-label="החלף למצב כהה"></button>
+        <button class="board-toggle" id="boardToggle" title="תצוגת לוח" aria-label="תצוגת לוח"></button>
     </div>
 
     <div class="main-container">
         <!-- סרגל התיקיות בצד ימין -->
-        <div class="folders-sidebar" id="foldersSidebar">
-            <div class="folders-header">
-                <button id="closeSidebarBtn" aria-label="סגור תפריט" style="display:none;background:none;border:none;font-size:1.4em;cursor:pointer;padding:4px 8px;color:#4a5568;line-height:1;">✕</button>
-                <h2>תיקיות</h2>
+        <nav class="folders-sidebar" id="foldersSidebar" aria-label="תיקיות">
+            <div class="brand">
+                <img src="icon-192.png" alt="" width="28" height="28">
+                <span>פתקי משימות</span>
             </div>
-            <div class="folders-list" id="folders-list">
+            <div class="folders-header">
+                <h2 id="foldersHeading">תיקיות</h2>
+                <button id="closeSidebarBtn" class="icon-btn" aria-label="סגור תפריט"></button>
+            </div>
+            <div class="folders-list" id="folders-list" aria-labelledby="foldersHeading">
                 <!-- התיקיות הקבועות -->
                 <div class="folder-item fixed-folder" data-folder="תיקייה כללית">
                     <span class="folder-name">📁 תיקייה כללית</span>
@@ -60,14 +81,15 @@
             </div>
             <!-- כפתורי גיבוי ושחזור בתחתית הסרגל -->
             <div class="sidebar-backup-section">
-                <button class="create-folder-btn sidebar-create-folder-btn" id="create-folder-btn">+ הוסף תיקייה</button>
+                <button class="create-folder-btn sidebar-create-folder-btn" id="create-folder-btn">תיקייה חדשה</button>
                 <!-- כפתורי כלים — מוצגים רק במובייל -->
                 <div class="sidebar-mobile-tools">
-                    <button class="sidebar-tool-btn" id="sidebarGuideBtn" title="הסבר על האתר"></button>
-                    <button class="sidebar-tool-btn" id="sidebarDarkBtn" title="מצב יום/לילה"></button>
-                    <button class="sidebar-tool-btn" id="sidebarSoundBtn" title="בחירת צליל">🎵</button>
-                    <button class="sidebar-tool-btn" id="sidebarNotifBtn" title="הפעל התראות">🔔</button>
+                    <button class="sidebar-tool-btn" id="sidebarGuideBtn" title="הסבר על האתר" aria-label="הסבר על האתר"></button>
+                    <button class="sidebar-tool-btn" id="sidebarDarkBtn" title="מצב יום/לילה" aria-label="מצב יום/לילה"></button>
+                    <button class="sidebar-tool-btn" id="sidebarSoundBtn" title="בחירת צליל" aria-label="בחירת צליל"></button>
+                    <button class="sidebar-tool-btn" id="sidebarNotifBtn" title="הפעל התראות" aria-label="הפעל התראות"></button>
                 </div>
+                <div class="sidebar-backup-row">
                 <button class="backup-btn" id="backup-notes-btn" aria-label="שמור פתקים לקובץ">
                     <svg aria-hidden="true" focusable="false" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
                     שמור לקובץ
@@ -76,43 +98,55 @@
                     <svg aria-hidden="true" focusable="false" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
                     שחזר מקובץ
                 </button>
+                </div>
             </div>
-        </div>
+        </nav>
+        <div class="sidebar-scrim" id="sidebarScrim" aria-hidden="true"></div>
 
         <!-- כפתור שלושה פסים בצד ימין למעלה -->
-        <div class="sidebar-toggle" id="sidebarToggle" role="button" tabindex="0" aria-label="פתח תפריט תיקיות">☰</div>
+        <button class="sidebar-toggle" id="sidebarToggle" aria-label="פתח תפריט תיקיות" aria-controls="foldersSidebar" aria-expanded="false"><svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="4" y1="7" x2="20" y2="7"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="17" x2="14" y2="17"/></svg></button>
 
         <!-- תוכן ראשי: אזור יצירת הפתקים ואזור הפתקים -->
-        <div class="content" id="mainContent">
-            <h1>פתקי משימות</h1>
-            <div class="search-bar-wrapper">
+        <main class="content" id="mainContent" tabindex="-1">
+            <header class="page-header">
+                <h1>פתקי משימות</h1>
+                <p class="app-subtitle" id="appSubtitle" aria-live="polite"></p>
+            </header>
+            <div class="search-bar-wrapper" role="search">
                 <label for="search-input" class="sr-only">חיפוש פתקים</label>
-                <input type="text" id="search-input" placeholder="חפש פתקים...">
+                <svg class="search-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><line x1="20" y1="20" x2="16.5" y2="16.5"/></svg>
+                <input type="search" id="search-input" placeholder="חיפוש בפתקים" enterkeyhint="search" autocomplete="off">
+                <kbd aria-hidden="true">/</kbd>
             </div>
-            <div class="create-note" id="createNoteSection">
+            <section class="create-note" id="createNoteSection" aria-label="פתק חדש">
                 <label for="note-text" class="sr-only">תוכן הפתק</label>
-                <textarea id="note-text" placeholder="הקלד הערה"></textarea>
-                <label for="note-due" class="sr-only">זמן ביצוע</label>
-                <input type="datetime-local" id="note-due" placeholder="הגדרת תאריך יעד">
-                <div class="color-options" role="group" aria-label="בחירת צבע פתק">
-                    <div class="color-circle pink" data-color="pink" role="radio" aria-label="ורוד" tabindex="0"></div>
-                    <div class="color-circle yellow" data-color="yellow" role="radio" aria-label="צהוב" tabindex="0"></div>
-                    <div class="color-circle purple" data-color="purple" role="radio" aria-label="סגול" tabindex="0"></div>
-                    <div class="color-circle green" data-color="green" role="radio" aria-label="ירוק" tabindex="0"></div>
-                    <div class="color-circle orange" data-color="orange" role="radio" aria-label="כתום" tabindex="0"></div>
-                    <div class="color-circle cyan" data-color="cyan" role="radio" aria-label="תכלת" tabindex="0"></div>
-                    <div class="color-circle red" data-color="red" role="radio" aria-label="אדום" tabindex="0"></div>
-                    <div class="color-circle note-color-picker" id="note-color-picker-btn" title="בחר צבע מותאם לפתק" role="button" aria-label="בחר צבע מותאם" tabindex="0">🎨</div>
-                    <input type="color" id="note-color-picker" class="color-picker-input" aria-label="בורר צבע מותאם">
+                <textarea id="note-text" placeholder="מה צריך לעשות?" rows="3"></textarea>
+                <div class="composer-row">
+                <div class="composer-field">
+                <label for="note-due" class="field-label">תזכורת (לא חובה)</label>
+                <input type="datetime-local" id="note-due">
                 </div>
-                <div class="buttons">
+                <div class="color-options" role="radiogroup" aria-label="צבע הפתק">
+                    <div class="color-circle pink" data-color="pink" role="radio" aria-checked="false" aria-label="ורוד" tabindex="0"></div>
+                    <div class="color-circle yellow" data-color="yellow" role="radio" aria-checked="false" aria-label="צהוב" tabindex="0"></div>
+                    <div class="color-circle purple" data-color="purple" role="radio" aria-checked="false" aria-label="סגול" tabindex="0"></div>
+                    <div class="color-circle green" data-color="green" role="radio" aria-checked="false" aria-label="ירוק" tabindex="0"></div>
+                    <div class="color-circle orange" data-color="orange" role="radio" aria-checked="false" aria-label="כתום" tabindex="0"></div>
+                    <div class="color-circle cyan" data-color="cyan" role="radio" aria-checked="false" aria-label="תכלת" tabindex="0"></div>
+                    <div class="color-circle red" data-color="red" role="radio" aria-checked="false" aria-label="אדום" tabindex="0"></div>
+                    <div class="color-circle note-color-picker" id="note-color-picker-btn" title="בחר צבע מותאם לפתק" role="button" aria-label="בחר צבע מותאם" tabindex="0"></div>
+                    <input type="color" id="note-color-picker" class="color-picker-input" aria-label="בורר צבע מותאם" tabindex="-1">
+                </div>
+                </div>
+                <div class="composer-footer">
+                    <span class="composer-hint"><kbd>Ctrl</kbd> + <kbd>Enter</kbd> להוספה</span>
                     <div class="button-group">
-                        <button class="create-btn" id="create-note-btn">הוסף הערה</button>
-                        <button class="cancel-btn" id="clear-form-btn">ביטול</button>
+                        <button class="cancel-btn" id="clear-form-btn">ניקוי</button>
+                        <button class="create-btn" id="create-note-btn">הוסף פתק</button>
                     </div>
                 </div>
                 <input type="file" id="restore-input" accept=".json" style="display: none;">
-            </div>
+            </section>
             <div class="folder-container active" id="general-folder-container" data-folder="תיקייה כללית">
                 <div class="folder-title">תיקייה כללית</div>
                 <div class="notes-container" data-folder="תיקייה כללית"></div>
@@ -121,13 +155,14 @@
                 <!-- תיקיות נוצרות דינמית על ידי loadFolders() -->
             </div>
             <button class="back-btn" id="backBtn" style="display: none;">חזור</button>
-        </div>
+        </main>
 
         <!-- תצוגת לוח -->
         <div class="board-view" id="boardView" style="display: none;">
             <div class="board-search">
                 <div id="boardFolderBadge" style="display:none;"></div>
-                <input type="text" id="board-search-input" placeholder="חפש פתקים בלוח...">
+                <label for="board-search-input" class="sr-only">חיפוש פתקים בלוח</label>
+                <input type="search" id="board-search-input" placeholder="חיפוש בלוח" autocomplete="off">
             </div>
             <div id="boardDescriptionModal" class="guide-modal" style="display: none;">
                 <div class="guide-modal-content">
@@ -164,7 +199,7 @@
         <button id="confirm-backup-btn">כן, גבה עכשיו</button>
         <button id="cancel-backup-btn">לא, דלג</button>
     </div>
-    <div id="guideModal" class="guide-modal" style="display: none;">
+    <div id="guideModal" class="guide-modal" style="display: none;" role="dialog" aria-modal="true" aria-labelledby="guideTitle">
         <div class="guide-modal-content">
             <h2>ברוכים הבאים לאתר פתקי משימות!</h2>
             <p>
@@ -194,23 +229,23 @@
         <div class="new-note-modal-content">
             <h2 id="newNoteModalTitle">הוסף פתק חדש</h2>
             <label for="new-note-text" class="sr-only">תוכן הפתק</label>
-            <textarea id="new-note-text" placeholder="הקלד הערה"></textarea>
-            <label for="new-note-due" class="sr-only">זמן ביצוע</label>
-            <input type="datetime-local" id="new-note-due" placeholder="הגדרת תאריך יעד">
-            <div class="color-options" role="group" aria-label="בחירת צבע פתק">
-                <div class="color-circle pink" data-color="pink" role="radio" aria-label="ורוד" tabindex="0"></div>
-                <div class="color-circle yellow" data-color="yellow" role="radio" aria-label="צהוב" tabindex="0"></div>
-                <div class="color-circle purple" data-color="purple" role="radio" aria-label="סגול" tabindex="0"></div>
-                <div class="color-circle green" data-color="green" role="radio" aria-label="ירוק" tabindex="0"></div>
-                <div class="color-circle orange" data-color="orange" role="radio" aria-label="כתום" tabindex="0"></div>
-                <div class="color-circle cyan" data-color="cyan" role="radio" aria-label="תכלת" tabindex="0"></div>
-                <div class="color-circle red" data-color="red" role="radio" aria-label="אדום" tabindex="0"></div>
-                <div class="color-circle note-color-picker" id="new-note-color-picker-btn" title="בחר צבע מותאם לפתק" role="button" aria-label="בחר צבע מותאם" tabindex="0">🎨</div>
-                <input type="color" id="new-note-color-picker" class="color-picker-input" aria-label="בורר צבע מותאם">
+            <textarea id="new-note-text" placeholder="מה צריך לעשות?"></textarea>
+            <label for="new-note-due" class="field-label">תזכורת (לא חובה)</label>
+            <input type="datetime-local" id="new-note-due">
+            <div class="color-options" role="radiogroup" aria-label="צבע הפתק">
+                <div class="color-circle pink" data-color="pink" role="radio" aria-checked="false" aria-label="ורוד" tabindex="0"></div>
+                <div class="color-circle yellow" data-color="yellow" role="radio" aria-checked="false" aria-label="צהוב" tabindex="0"></div>
+                <div class="color-circle purple" data-color="purple" role="radio" aria-checked="false" aria-label="סגול" tabindex="0"></div>
+                <div class="color-circle green" data-color="green" role="radio" aria-checked="false" aria-label="ירוק" tabindex="0"></div>
+                <div class="color-circle orange" data-color="orange" role="radio" aria-checked="false" aria-label="כתום" tabindex="0"></div>
+                <div class="color-circle cyan" data-color="cyan" role="radio" aria-checked="false" aria-label="תכלת" tabindex="0"></div>
+                <div class="color-circle red" data-color="red" role="radio" aria-checked="false" aria-label="אדום" tabindex="0"></div>
+                <div class="color-circle note-color-picker" id="new-note-color-picker-btn" title="בחר צבע מותאם לפתק" role="button" aria-label="בחר צבע מותאם" tabindex="0"></div>
+                <input type="color" id="new-note-color-picker" class="color-picker-input" aria-label="בורר צבע מותאם" tabindex="-1">
             </div>
             <div class="buttons">
-                <button class="create-btn" id="confirm-new-note-btn">הוסף</button>
                 <button class="cancel-btn" id="cancel-new-note-btn">ביטול</button>
+                <button class="create-btn" id="confirm-new-note-btn">הוסף פתק</button>
             </div>
         </div>
     </div>
