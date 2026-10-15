@@ -41,9 +41,31 @@ jobs:
           mkdir -p android/app/src/main/res/mipmap-xxxhdpi
           cp icon-512.png android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png
 
+      - name: Decode release keystore
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          if [ -z "$ANDROID_KEYSTORE_BASE64" ]; then
+            echo "::error::Missing ANDROID_KEYSTORE_BASE64 secret. Without a stable signing key the new APK cannot install over the old one."
+            exit 1
+          fi
+          echo "$ANDROID_KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.jks"
+          echo "ANDROID_KEYSTORE_PATH=$RUNNER_TEMP/release.jks" >> "$GITHUB_ENV"
+
       - name: Build Release APK
         working-directory: android
+        env:
+          VERSION_CODE: ${{ github.run_number }}
+          VERSION_NAME: 1.0.${{ github.run_number }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: gradle assembleRelease
+
+      - name: Verify APK signature
+        run: |
+          APK=$(find android/app/build/outputs/apk -name "*.apk" | head -1)
+          "$ANDROID_HOME/build-tools/34.0.0/apksigner" verify --print-certs "$APK"
 
       - name: Find APK
         run: find android -name "*.apk"
