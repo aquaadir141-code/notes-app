@@ -1589,6 +1589,49 @@ function checkDueTimes() {
     }
 }
 
+// --- תזכורות כשהאפליקציה סגורה (אפליקציית האנדרואיד) ---
+// באפליקציית האנדרואיד קיים גשר בשם NativeReminders שמתזמן התראות מערכת
+// (AlarmManager), כך שהן מגיעות גם כשהאפליקציה סגורה. בדפדפן הגשר לא קיים
+// וההתראות ממשיכות לעבוד רק כשהדף פתוח.
+let _lastNativeRemindersJson = null;
+
+function syncNativeReminders() {
+    const bridge = window.NativeReminders;
+    if (!bridge || typeof bridge.sync !== 'function') return;
+    const now = Date.now();
+    const reminders = getNotes()
+        .filter(n => n.dueTime && !n.completed && !n.notified && n.folder !== 'אשפה')
+        .map(n => ({ id: String(n.id), text: n.text || '', at: new Date(n.dueTime).getTime() }))
+        .filter(r => r.at > now);
+    const json = JSON.stringify(reminders);
+    if (json === _lastNativeRemindersJson) return;
+    try {
+        bridge.sync(json);
+        _lastNativeRemindersJson = json;
+    } catch (e) {
+        console.warn('Native reminders sync failed', e);
+    }
+}
+
+// פתקים שהתראת המערכת שלהם כבר הוצגה כשהאפליקציה הייתה סגורה מסומנים כ"הותרעו",
+// כדי שלא תקפוץ שוב התראה כפולה בתוך הדף כשפותחים את האפליקציה.
+function markNativeFiredReminders() {
+    const bridge = window.NativeReminders;
+    if (!bridge || typeof bridge.takeFiredIds !== 'function') return;
+    let ids;
+    try { ids = JSON.parse(bridge.takeFiredIds() || '[]'); } catch (e) { return; }
+    if (!Array.isArray(ids) || !ids.length) return;
+    const notes = getNotes();
+    let changed = false;
+    notes.forEach(n => {
+        if (ids.includes(String(n.id)) && !n.notified) { n.notified = true; changed = true; }
+    });
+    if (changed) {
+        localStorage.setItem('notes', JSON.stringify(notes));
+        loadNotesWithoutFolderView();
+    }
+}
+
 function showCustomAlertModal(text) {
     if (document.getElementById('custom-alert-overlay')) return;
     const d = createDialog({
@@ -1912,5 +1955,12 @@ document.addEventListener('DOMContentLoaded', function() {
 
     setupEventListeners();
     if (window._dueDateInterval) clearInterval(window._dueDateInterval);
-    window._dueDateInterval = setInterval(() => { checkDueTimes(); autoBackupIfTime(); }, 5000);
+    window._dueDateInterval = setInterval(() => { checkDueTimes(); autoBackupIfTime(); syncNativeReminders(); }, 5000);
+    markNativeFiredReminders();
+    syncNativeReminders();
+    document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'hidden') syncNativeReminders();
+        else markNativeFiredReminders();
+    });
+    window.addEventListener('pagehide', syncNativeReminders);
 });
