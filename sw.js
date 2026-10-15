@@ -1,4 +1,4 @@
-const CACHE_NAME = 'פתקים-v2';
+const CACHE_NAME = 'פתקים-v4';
 const ASSETS = [
   './',
   './index.html',

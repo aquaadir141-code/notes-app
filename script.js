@@ -31,39 +31,109 @@ function escapeHTML(str) {
         .replace(/'/g, '&#039;');
 }
 
-// --- 1c. מודאלים מעוצבים במקום alert/confirm ---
+// --- 1c. חלונות מעוצבים במקום alert/confirm/prompt ---
 
-function showAlert(message, onClose) {
-    const existing = document.getElementById('_customAlertModal');
-    if (existing) existing.remove();
+// יוצר חלון נגיש: role=dialog, מלכודת פוקוס, Escape לסגירה, החזרת פוקוס לכפתור שפתח אותו
+function createDialog(opts = {}) {
+    const { id, title, message, icon, tone, wide, dismissible = true, layer, onDismiss } = opts;
+    if (id) {
+        const existing = document.getElementById(id);
+        if (existing) { if (existing._closeDialog) existing._closeDialog(true); else existing.remove(); }
+    }
+    const trigger = document.activeElement;
 
     const overlay = document.createElement('div');
-    overlay.id = '_customAlertModal';
-    overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.45);display:flex;justify-content:center;align-items:center;z-index:99999;direction:rtl;';
+    overlay.className = 'dialog-overlay' + (layer ? ' is-' + layer : '');
+    if (id) overlay.id = id;
 
     const box = document.createElement('div');
-    box.style.cssText = 'background:white;padding:28px 32px;border-radius:14px;max-width:380px;width:90%;text-align:center;box-shadow:0 8px 30px rgba(0,0,0,0.18);';
-    if (document.body.classList.contains('dark-mode')) {
-        box.style.background = '#2d3748';
-        box.style.color = '#e2e8f0';
+    box.className = 'dialog' + (wide ? ' dialog--wide' : '');
+    box.setAttribute('role', tone === 'danger' || tone === 'warning' ? 'alertdialog' : 'dialog');
+    box.setAttribute('aria-modal', 'true');
+
+    if (icon) {
+        const iconEl = document.createElement('div');
+        iconEl.className = 'dialog-icon' + (tone ? ' is-' + tone : '');
+        iconEl.innerHTML = ICONS[icon] || '';
+        box.appendChild(iconEl);
     }
-
-    const msg = document.createElement('p');
-    msg.textContent = message;
-    msg.style.cssText = 'font-size:1rem;margin-bottom:20px;line-height:1.5;';
-
-    const btn = document.createElement('button');
-    btn.textContent = 'אישור';
-    btn.style.cssText = 'background:#4299e1;color:white;border:none;border-radius:8px;padding:10px 28px;font-size:1rem;cursor:pointer;';
-    btn.onclick = () => {
-        overlay.remove();
-        if (onClose) onClose();
-    };
-
-    box.appendChild(msg);
-    box.appendChild(btn);
+    const uid = 'dlg-' + Math.random().toString(36).slice(2, 8);
+    if (title) {
+        const h = document.createElement('h2');
+        h.className = 'dialog-title';
+        h.id = uid + '-title';
+        h.textContent = title;
+        box.appendChild(h);
+        box.setAttribute('aria-labelledby', h.id);
+    }
+    if (message) {
+        const p = document.createElement('p');
+        p.className = 'dialog-message';
+        p.id = uid + '-desc';
+        p.textContent = message;
+        box.appendChild(p);
+        if (title) box.setAttribute('aria-describedby', p.id); else box.setAttribute('aria-labelledby', p.id);
+    }
+    const body = document.createElement('div');
+    body.className = 'dialog-body';
+    const actions = document.createElement('div');
+    actions.className = 'dialog-actions';
+    box.appendChild(body);
+    box.appendChild(actions);
     overlay.appendChild(box);
     document.body.appendChild(overlay);
+
+    let closed = false;
+    function close(immediate) {
+        if (closed) return;
+        closed = true;
+        document.removeEventListener('keydown', onKey, true);
+        if (immediate) { overlay.remove(); return; }
+        overlay.dataset.state = 'closed';
+        setTimeout(() => overlay.remove(), 240);
+        if (trigger && typeof trigger.focus === 'function' && document.contains(trigger)) trigger.focus({ preventScroll: true });
+    }
+    function dismiss() {
+        if (!dismissible) return;
+        close();
+        if (onDismiss) onDismiss();
+    }
+    function onKey(e) {
+        if (overlay !== topmostDialog()) return;
+        if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); dismiss(); return; }
+        if (e.key !== 'Tab') return;
+        const items = [...box.querySelectorAll('button, input, textarea, select, [tabindex]:not([tabindex="-1"])')].filter(el => !el.disabled && el.offsetParent !== null);
+        if (!items.length) return;
+        const first = items[0], last = items[items.length - 1];
+        if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+        else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+    }
+    document.addEventListener('keydown', onKey, true);
+    overlay.addEventListener('mousedown', (e) => { if (e.target === overlay) dismiss(); });
+    overlay._closeDialog = close;
+    requestAnimationFrame(() => requestAnimationFrame(() => { if (!closed) overlay.dataset.state = 'open'; }));
+
+    function addButton(text, variant, onClick) {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'btn btn-' + (variant || 'secondary');
+        b.textContent = text;
+        if (onClick) b.addEventListener('click', onClick);
+        actions.appendChild(b);
+        return b;
+    }
+    return { overlay, box, body, actions, close, addButton };
+}
+
+function topmostDialog() {
+    const all = document.querySelectorAll('.dialog-overlay:not([data-state="closed"])');
+    return all[all.length - 1] || null;
+}
+
+function showAlert(message, onClose) {
+    const d = createDialog({ id: '_customAlertModal', message, layer: 'top', onDismiss: onClose });
+    d.body.remove();
+    const btn = d.addButton('אישור', 'primary', () => { d.close(); if (onClose) onClose(); });
     btn.focus();
 }
 
@@ -89,60 +159,72 @@ function trapFocus(modalEl, triggerEl) {
     return onClose;
 }
 
-function showToast(message, duration = 2500) {
-    const existing = document.getElementById('_toast');
-    if (existing) existing.remove();
-    const toast = document.createElement('div');
-    toast.id = '_toast';
+let _toastTimer = null;
+function showToast(message, duration = 2500, action) {
+    let toast = document.getElementById('_toast');
+    if (!toast) {
+        toast = document.createElement('div');
+        toast.id = '_toast';
+        toast.className = 'toast';
+        toast.setAttribute('role', 'status');
+        toast.setAttribute('aria-live', 'polite');
+        document.body.appendChild(toast);
+    }
     toast.textContent = message;
-    toast.style.cssText = 'position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:#2d3748;color:white;padding:10px 20px;border-radius:24px;font-size:0.9rem;z-index:99999;opacity:0;transition:opacity 0.25s;pointer-events:none;white-space:nowrap;';
-    document.body.appendChild(toast);
-    requestAnimationFrame(() => { toast.style.opacity = '1'; });
-    setTimeout(() => {
-        toast.style.opacity = '0';
-        setTimeout(() => toast.remove(), 300);
-    }, duration);
+    toast.classList.toggle('has-action', !!action);
+    if (action) {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'toast-action';
+        btn.textContent = action.label;
+        btn.onclick = () => {
+            clearTimeout(_toastTimer);
+            toast.dataset.state = 'closed';
+            action.onClick();
+        };
+        toast.appendChild(btn);
+    }
+    clearTimeout(_toastTimer);
+    // מעבר (ולא keyframes) כדי שטוסט חדש יחליף את הקודם בלי לקפוץ
+    requestAnimationFrame(() => { toast.dataset.state = 'open'; });
+    _toastTimer = setTimeout(() => { toast.dataset.state = 'closed'; }, duration);
 }
 
-function showConfirm(message, onConfirm, onCancel) {
-    const existing = document.getElementById('_customConfirmModal');
-    if (existing) existing.remove();
-
-    const overlay = document.createElement('div');
-    overlay.id = '_customConfirmModal';
-    overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.45);display:flex;justify-content:center;align-items:center;z-index:99999;direction:rtl;';
-
-    const box = document.createElement('div');
-    box.style.cssText = 'background:white;padding:28px 32px;border-radius:14px;max-width:380px;width:90%;text-align:center;box-shadow:0 8px 30px rgba(0,0,0,0.18);';
-    if (document.body.classList.contains('dark-mode')) {
-        box.style.background = '#2d3748';
-        box.style.color = '#e2e8f0';
-    }
-
-    const msg = document.createElement('p');
-    msg.textContent = message;
-    msg.style.cssText = 'font-size:1rem;margin-bottom:24px;line-height:1.5;';
-
-    const btnRow = document.createElement('div');
-    btnRow.style.cssText = 'display:flex;gap:12px;justify-content:center;';
-
-    const confirmBtn = document.createElement('button');
-    confirmBtn.textContent = 'אישור';
-    confirmBtn.style.cssText = 'background:#e53e3e;color:white;border:none;border-radius:8px;padding:10px 28px;font-size:1rem;cursor:pointer;';
-    confirmBtn.onclick = () => { overlay.remove(); if (onConfirm) onConfirm(); };
-
-    const cancelBtn = document.createElement('button');
-    cancelBtn.textContent = 'ביטול';
-    cancelBtn.style.cssText = 'background:#e2e8f0;color:#2d3748;border:none;border-radius:8px;padding:10px 28px;font-size:1rem;cursor:pointer;';
-    cancelBtn.onclick = () => { overlay.remove(); if (onCancel) onCancel(); };
-
-    btnRow.appendChild(confirmBtn);
-    btnRow.appendChild(cancelBtn);
-    box.appendChild(msg);
-    box.appendChild(btnRow);
-    overlay.appendChild(box);
-    document.body.appendChild(overlay);
+function showConfirm(message, onConfirm, onCancel, opts = {}) {
+    const d = createDialog({
+        id: '_customConfirmModal',
+        title: opts.title || 'לאשר את הפעולה?',
+        message,
+        icon: opts.icon || 'delete',
+        tone: opts.tone || 'danger',
+        layer: 'top',
+        onDismiss: onCancel
+    });
+    d.body.remove();
+    const cancelBtn = d.addButton(opts.cancelText || 'ביטול', 'secondary', () => { d.close(); if (onCancel) onCancel(); });
+    d.addButton(opts.confirmText || 'אישור', opts.tone === 'danger' || !opts.tone ? 'danger' : 'primary', () => { d.close(); if (onConfirm) onConfirm(); });
     cancelBtn.focus();
+}
+
+function showPrompt({ title, label, placeholder, maxLength, confirmText, value }, onSubmit) {
+    const d = createDialog({ id: '_customPromptModal', title, icon: 'folderPlus', layer: 'top' });
+    const inputId = 'prompt-input-' + Date.now();
+    d.body.innerHTML = `<label class="field-label" for="${inputId}"></label><input type="text" id="${inputId}" autocomplete="off" enterkeyhint="done">`;
+    d.body.querySelector('label').textContent = label || '';
+    const input = d.body.querySelector('input');
+    if (placeholder) input.placeholder = placeholder;
+    if (maxLength) input.maxLength = maxLength;
+    if (value) input.value = value;
+    d.addButton('ביטול', 'secondary', () => d.close());
+    const ok = d.addButton(confirmText || 'שמירה', 'primary', submit);
+    function submit() {
+        const result = onSubmit(input.value);
+        if (result !== false) d.close();
+        else input.focus();
+    }
+    input.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); submit(); } });
+    setTimeout(() => input.focus(), 30);
+    return ok;
 }
 
 // --- 2. משתנים גלובליים ---
@@ -168,212 +250,7 @@ const SOUND_FILES = {
 let currentSoundKey = localStorage.getItem('selectedSound') || 'sound1';
 let alertSound = new Audio(SOUND_FILES[currentSoundKey]);
 
-// --- 3. הזרקת CSS דינמי ---
-
-const style = document.createElement('style');
-style.innerHTML = `
-    /* כפתור הגדרות (מוזיקה) צף - שמאל למטה */
-    #settingsFloatingBtn {
-        position: fixed;
-        bottom: 20px;
-        left: 20px;
-        width: 50px;
-        height: 50px;
-        background-color: white;
-        border-radius: 50%;
-        box-shadow: 0 4px 10px rgba(0,0,0,0.2);
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        cursor: pointer;
-        z-index: 4000;
-        border: 1px solid #e2e8f0;
-        color: #4a5568;
-        transition: transform 0.2s, background-color 0.3s;
-    }
-    #settingsFloatingBtn:hover {
-        transform: scale(1.1);
-        background-color: #f7fafc;
-    }
-    body.dark-mode #settingsFloatingBtn {
-        background-color: #2d3748;
-        border-color: #4a5568;
-        color: #e2e8f0;
-    }
-
-    /* כפתור תפריט צד */
-    #sidebarToggle {
-        z-index: 1000 !important;
-        cursor: pointer;
-        position: fixed;
-        right: 20px;
-        top: 20px;
-        font-size: 24px;
-        color: #2d3748;
-        transition: color 0.3s;
-        background: none !important;
-        padding: 0 !important;
-        border-radius: 0;
-    }
-    body.dark-mode #sidebarToggle { color: #e2e8f0; }
-    .folders-sidebar { z-index: 1001 !important; }
-
-    /* הסרת קו תחתון מהתיקיות */
-    .folder-title, .folder-container {
-        border-bottom: none !important;
-        text-decoration: none !important;
-    }
-
-    /* --- תיקון נעיצה בלוח: שכבה עליונה --- */
-    .note.pinned {
-        border: 2px solid #e1b12c !important;
-        box-shadow: 0 0 12px rgba(225, 177, 44, 0.4);
-        z-index: 50;
-    }
-    
-    /* סידור האייקונים בראש הפתק */
-    .note-header {
-        display: flex;
-        align-items: center;
-        justify-content: flex-end;
-        gap: 2px;
-        padding: 0 0 5px 0;
-        position: relative;
-        z-index: 10;
-    }
-
-    .folder-wrapper {
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        position: relative;
-    }
-
-    .note-header button { 
-        color: #3182ce; 
-        transition: color 0.3s; 
-        background: none; 
-        border: none; 
-        cursor: pointer; 
-        padding: 4px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-    }
-    .note-header button:hover { color: #2c5282; }
-    body.dark-mode .note-header button { color: #90cdf4; }
-    body.dark-mode .note-header button:hover { color: #63b3ed; }
-
-    /* אייקון הנעץ */
-    .pin-btn.active {
-        color: #e1b12c !important;
-        transform: rotate(-30deg);
-    }
-
-    /* --- תפריט בחירת תיקייה --- */
-    .menu {
-        display: none;
-        position: absolute;
-        top: 100%;
-        right: 0;
-        min-width: 160px;
-        max-height: 200px;
-        background-color: white;
-        border: 1px solid #ccc;
-        border-radius: 8px;
-        box-shadow: 0 5px 25px rgba(0,0,0,0.3);
-        z-index: 99999;
-        overflow-y: auto;
-        overflow-x: hidden;
-        padding: 5px 0;
-        text-align: right;
-    }
-    
-    body.dark-mode .menu {
-        background-color: #2d3748;
-        border-color: #4a5568;
-        color: white;
-    }
-
-    .menu-item {
-        padding: 8px 12px;
-        cursor: pointer;
-        font-size: 0.9em;
-        white-space: nowrap;
-        display: block;
-        border-bottom: 1px solid rgba(0,0,0,0.05);
-    }
-    .menu-item:last-child { border-bottom: none; }
-    .menu-item:hover { background-color: #f7fafc; }
-    body.dark-mode .menu-item:hover { background-color: #4a5568; }
-
-    .menu::-webkit-scrollbar { width: 6px; }
-    .menu::-webkit-scrollbar-thumb { background: #cbd5e0; border-radius: 3px; }
-    body.dark-mode .menu::-webkit-scrollbar-thumb { background: #4a5568; }
-
-    /* סרגל עריכה */
-    .note-toolbar {
-        display: none;
-        gap: 5px;
-        background: #ffffff;
-        padding: 6px;
-        border-radius: 8px;
-        box-shadow: 0 4px 15px rgba(0,0,0,0.15);
-        position: absolute;
-        top: 40px;
-        left: 50%;
-        transform: translateX(-50%);
-        z-index: 100;
-        border: 1px solid #e2e8f0;
-        white-space: nowrap;
-        align-items: center;
-    }
-    body.dark-mode .note-toolbar { background: #2d3748; border-color: #4a5568; }
-    .note-toolbar button { padding: 4px; width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; font-size: 0.9em; background: transparent; color: #4a5568; border-radius: 4px; border: none; cursor: pointer; }
-    body.dark-mode .note-toolbar button { color: #cbd5e0; }
-    .note-toolbar button:hover { background: rgba(0,0,0,0.1); }
-
-    .note-content[contenteditable="true"] { outline: none; background: rgba(255,255,255,0.8); border: 2px solid #3182ce; border-radius: 6px; padding: 8px; min-height: 40px; }
-    body.dark-mode .note-content[contenteditable="true"] { background: rgba(0,0,0,0.3); border-color: #90cdf4; }
-
-    /* וידוא שהפתק לא חוסם */
-    .note { overflow: visible !important; }
-
-    /* מדריך */
-    .guide-modal-content, .settings-modal-content { max-width: 600px; width: 90%; direction: rtl; text-align: right; }
-    .guide-columns { display: flex; gap: 20px; text-align: right; margin-bottom: 20px; }
-    .guide-col { flex: 1; background: rgba(0,0,0,0.03); padding: 10px; border-radius: 8px; }
-    .guide-col h3 { border-bottom: 2px solid #3182ce; padding-bottom: 5px; margin-bottom: 10px; color: #2c5282; font-size: 1.1em; display: flex; align-items: center; gap: 8px; }
-    body.dark-mode .guide-col { background: rgba(255,255,255,0.05); }
-    body.dark-mode .guide-col h3 { color: #90cdf4; border-color: #90cdf4; }
-
-    .copyright-footer { margin-top: 20px; padding-top: 15px; border-top: 1px solid #e2e8f0; font-size: 0.9em; color: #718096; font-weight: bold; text-align: center; background: #f7fafc; padding: 15px; border-radius: 8px; }
-    body.dark-mode .copyright-footer { border-color: #4a5568; color: #a0aec0; background: #2d3748; }
-    .inline-icon { vertical-align: middle; margin: 0 2px; display: inline-block; width: 16px; height: 16px; color: #3182ce; }
-
-    /* הגדרות חלונית הגדרות */
-    .sound-option {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        padding: 10px;
-        border: 1px solid #e2e8f0;
-        margin-bottom: 8px;
-        border-radius: 6px;
-        cursor: pointer;
-        transition: all 0.2s;
-    }
-    body.dark-mode .sound-option { border-color: #4a5568; }
-    .sound-option:hover { background-color: #f7fafc; }
-    body.dark-mode .sound-option:hover { background-color: #4a5568; }
-    .sound-option.active {
-        background-color: #ebf8ff;
-        border-color: #3182ce;
-        font-weight: bold;
-    }
-    body.dark-mode .sound-option.active { background-color: #2c5282; border-color: #90cdf4; }
-`;
-document.head.appendChild(style);
+// --- 3. העיצוב כולו נמצא ב-styles.css ---
 
 // --- 4. סט אייקונים (SVG) ---
 
@@ -397,6 +274,16 @@ const ICONS = {
     sun: `<svg aria-hidden="true" focusable="false" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" style="fill:none;stroke:currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"></circle><line x1="12" y1="1" x2="12" y2="3"></line><line x1="12" y1="21" x2="12" y2="23"></line><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line><line x1="1" y1="12" x2="3" y2="12"></line><line x1="21" y1="12" x2="23" y2="12"></line><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line></svg>`,
     moon: `<svg aria-hidden="true" focusable="false" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" style="fill:none;stroke:currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg>`,
     grid: `<svg aria-hidden="true" focusable="false" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" style="fill:none;stroke:currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect></svg>`,
+    x: `<svg aria-hidden="true" focusable="false" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" style="fill:none;stroke:currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>`,
+    bell: `<svg aria-hidden="true" focusable="false" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" style="fill:none;stroke:currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"></path><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"></path></svg>`,
+    bellOff: `<svg aria-hidden="true" focusable="false" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" style="fill:none;stroke:currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8.7 3A6 6 0 0 1 18 8c0 2.7.6 4.6 1.3 6"></path><path d="M17 17H3s3-2 3-9a4.67 4.67 0 0 1 .3-1.7"></path><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"></path><line x1="2" y1="2" x2="22" y2="22"></line></svg>`,
+    alarm: `<svg aria-hidden="true" focusable="false" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" style="fill:none;stroke:currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="13" r="8"></circle><path d="M12 9v4l2 2"></path><path d="M5 3 2 6"></path><path d="m22 6-3-3"></path></svg>`,
+    calendar: `<svg aria-hidden="true" focusable="false" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" style="fill:none;stroke:currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>`,
+    folderPlus: `<svg aria-hidden="true" focusable="false" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" style="fill:none;stroke:currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path><line x1="12" y1="11" x2="12" y2="17"></line><line x1="9" y1="14" x2="15" y2="14"></line></svg>`,
+    checkCircle: `<svg aria-hidden="true" focusable="false" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" style="fill:none;stroke:currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="16 9 10.5 15 8 12.5"></polyline></svg>`,
+    inbox: `<svg aria-hidden="true" focusable="false" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" style="fill:none;stroke:currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 16 12 14 15 10 15 8 12 2 12"></polyline><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"></path></svg>`,
+    play: `<svg aria-hidden="true" focusable="false" width="18" height="18" viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M8 5.5v13a1 1 0 0 0 1.5.86l10.5-6.5a1 1 0 0 0 0-1.72L9.5 4.64A1 1 0 0 0 8 5.5z"></path></svg>`,
+    keyboard: `<svg aria-hidden="true" focusable="false" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" style="fill:none;stroke:currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="20" height="12" rx="2"></rect><line x1="6" y1="10" x2="6.01" y2="10"></line><line x1="10" y1="10" x2="10.01" y2="10"></line><line x1="14" y1="10" x2="14.01" y2="10"></line><line x1="18" y1="10" x2="18.01" y2="10"></line><line x1="7" y1="14" x2="17" y2="14"></line></svg>`,
     list: `<svg aria-hidden="true" focusable="false" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" style="fill:none;stroke:currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>`
 };
 
@@ -427,6 +314,7 @@ function togglePin(id) {
 
 function updateTopIcons() {
     const isDark = document.body.classList.contains('dark-mode');
+    const darkLabel = isDark ? 'עבור למצב בהיר' : 'עבור למצב כהה';
     const addBtn = document.getElementById('addNoteBtn');
     if(addBtn) addBtn.innerHTML = ICONS.plus;
     const guideBtn = document.getElementById('guideIcon');
@@ -434,21 +322,54 @@ function updateTopIcons() {
     const settingsBtn = document.getElementById('settingsIcon');
     if(settingsBtn) settingsBtn.innerHTML = ICONS.settings;
     const darkBtn = document.getElementById('darkModeToggle');
-    if(darkBtn) darkBtn.innerHTML = isDark ? ICONS.moon : ICONS.sun;
+    if(darkBtn) {
+        darkBtn.innerHTML = isDark ? ICONS.moon : ICONS.sun;
+        darkBtn.setAttribute('aria-label', darkLabel);
+        darkBtn.title = darkLabel;
+    }
     const boardBtn = document.getElementById('boardToggle');
-    if(boardBtn) boardBtn.innerHTML = isBoardViewActive ? ICONS.list : ICONS.grid;
+    if(boardBtn) {
+        boardBtn.innerHTML = isBoardViewActive ? ICONS.list : ICONS.grid;
+        const boardLabel = isBoardViewActive ? 'חזרה לתצוגת רשימה' : 'תצוגת לוח';
+        boardBtn.setAttribute('aria-label', boardLabel);
+        boardBtn.title = boardLabel;
+    }
     // עדכון כפתורי סרגל צד (מובייל)
     const sidebarGuideBtn = document.getElementById('sidebarGuideBtn');
     if(sidebarGuideBtn) sidebarGuideBtn.innerHTML = ICONS.info;
     const sidebarDarkBtn = document.getElementById('sidebarDarkBtn');
-    if(sidebarDarkBtn) sidebarDarkBtn.innerHTML = isDark ? ICONS.moon : ICONS.sun;
+    if(sidebarDarkBtn) {
+        sidebarDarkBtn.innerHTML = isDark ? ICONS.moon : ICONS.sun;
+        sidebarDarkBtn.setAttribute('aria-label', darkLabel);
+    }
+    const sidebarSoundBtn = document.getElementById('sidebarSoundBtn');
+    if(sidebarSoundBtn) sidebarSoundBtn.innerHTML = ICONS.settings;
+    const closeSidebarBtn = document.getElementById('closeSidebarBtn');
+    if(closeSidebarBtn) closeSidebarBtn.innerHTML = ICONS.x;
+    const newFolderBtn = document.getElementById('create-folder-btn');
+    if(newFolderBtn && !newFolderBtn.querySelector('svg')) newFolderBtn.insertAdjacentHTML('afterbegin', ICONS.folderPlus.replace('width="20" height="20"', 'width="17" height="17"'));
+    updateThemeColor();
+}
+
+// צבע סרגל הסטטוס בטלפון תואם את רקע האפליקציה
+function updateThemeColor() {
+    const bg = getComputedStyle(document.body).getPropertyValue('--bg').trim();
+    if (!bg) return;
+    document.querySelectorAll('meta[name="theme-color"]').forEach(m => {
+        m.removeAttribute('media');
+        m.setAttribute('content', bg);
+    });
+}
+
+function setPageHeaderVisible(visible) {
+    const header = document.querySelector('.page-header');
+    if (header) header.style.display = visible ? '' : 'none';
 }
 
 function showMainContent() {
     selectedFolder = 'תיקייה כללית';
     isFolderViewActive = false;
-    const h1 = document.querySelector('h1');
-    if(h1) h1.style.display = 'block';
+    setPageHeaderVisible(true);
     const createSec = document.getElementById('createNoteSection');
     if(createSec) createSec.style.display = 'block';
     const backBtn = document.getElementById('backBtn');
@@ -456,24 +377,58 @@ function showMainContent() {
     const badge = document.getElementById('boardFolderBadge');
     if(badge) badge.style.display = 'none';
     document.querySelectorAll('.folder-container').forEach(c => c.classList.remove('active'));
-    document.querySelectorAll('.folder-item').forEach(i => i.classList.remove('selected'));
+    document.querySelectorAll('.folder-item').forEach(i => { i.classList.remove('selected'); i.removeAttribute('aria-current'); });
     const defContainer = document.querySelector('.folder-container[data-folder="תיקייה כללית"]');
     if (defContainer) defContainer.classList.add('active');
     const defItem = document.querySelector('.folder-item[data-folder="תיקייה כללית"]');
-    if (defItem) defItem.classList.add('selected');
+    if (defItem) { defItem.classList.add('selected'); defItem.setAttribute('aria-current', 'true'); }
     loadNotesWithoutFolderView();
 }
 
 function createFolder() {
-    const folderName = prompt('שם לתיקייה (עד 15 תווים):');
-    if (!folderName || !folderName.trim()) return;
-    if (folderName.length > 15) { showAlert('שם התיקייה ארוך מדי (מקסימום 15 תווים)'); return; }
-    let folders = getFolders();
-    if (folders.includes(folderName) || fixedFolders.includes(folderName)) { showAlert('תיקייה בשם זה כבר קיימת'); return; }
-    folders.push(folderName);
-    localStorage.setItem('folders', JSON.stringify(folders));
-    loadFolders();
-    loadNotesWithoutFolderView(); 
+    showPrompt({
+        title: 'תיקייה חדשה',
+        label: 'שם התיקייה (עד 15 תווים)',
+        placeholder: 'למשל: עבודה',
+        maxLength: 15,
+        confirmText: 'יצירת תיקייה'
+    }, (raw) => {
+        const folderName = (raw || '').trim();
+        if (!folderName) return false;
+        if (folderName.length > 15) { showToast('שם התיקייה ארוך מדי (מקסימום 15 תווים)'); return false; }
+        let folders = getFolders();
+        if (folders.includes(folderName) || fixedFolders.includes(folderName)) { showToast('תיקייה בשם זה כבר קיימת'); return false; }
+        folders.push(folderName);
+        localStorage.setItem('folders', JSON.stringify(folders));
+        loadFolders();
+        loadNotesWithoutFolderView();
+        showToast(`התיקייה "${folderName}" נוצרה`);
+    });
+}
+
+function folderIconFor(folder) {
+    if (folder === 'תיקייה כללית') return ICONS.inbox;
+    if (folder === 'משימות שהושלמו') return ICONS.checkCircle;
+    if (folder === 'אשפה') return ICONS.delete;
+    return ICONS.folder;
+}
+
+function isSidebarPinned() {
+    return window.matchMedia('(min-width: 1100px)').matches;
+}
+
+function setSidebarOpen(open, opts = {}) {
+    const sidebar = document.getElementById('foldersSidebar');
+    const toggle = document.getElementById('sidebarToggle');
+    if (!sidebar) return;
+    sidebar.classList.toggle('active', open);
+    if (toggle) toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+    if (isSidebarPinned()) return;
+    if (open && opts.focus) {
+        const target = sidebar.querySelector('.folder-item.selected') || sidebar.querySelector('.folder-item');
+        if (target) setTimeout(() => target.focus({ preventScroll: true }), 60);
+    }
+    if (!open && opts.returnFocus && toggle) toggle.focus({ preventScroll: true });
 }
 
 function loadFolders() {
@@ -481,57 +436,80 @@ function loadFolders() {
     const contentContainer = document.getElementById('folders-notes-container');
     const folders = getFolders();
     if(!list || !contentContainer) return;
-    list.innerHTML = ''; 
+    list.innerHTML = '';
     [...fixedFolders, ...folders].forEach(folder => {
         const isFixed = fixedFolders.includes(folder);
         const div = document.createElement('div');
         div.className = `folder-item ${isFixed ? 'fixed-folder' : ''}`;
         div.setAttribute('data-folder', folder);
-        if (selectedFolder === folder) div.classList.add('selected');
-        let deleteBtnHTML = isFixed ? '' : `<button class="delete-folder-btn">✖</button>`;
+        div.setAttribute('role', 'button');
+        div.tabIndex = 0;
+        if (selectedFolder === folder) { div.classList.add('selected'); div.setAttribute('aria-current', 'true'); }
+        const safe = escapeHTML(folder);
+        const deleteBtnHTML = isFixed ? '' : `<button class="delete-folder-btn" aria-label="מחק את התיקייה ${safe}" title="מחק תיקייה">${ICONS.x}</button>`;
         div.innerHTML = `
-            <span class="folder-name">📁 ${folder}</span>
+            <span class="folder-icon">${folderIconFor(folder)}</span>
+            <span class="folder-name">${safe}</span>
+            <span class="folder-count" aria-hidden="true"></span>
             <div class="folder-actions">${deleteBtnHTML}</div>
             <div class="folder-color-picker">
-                <span class="folder-color-preview" style="background: ${folderColors[folder] || '#ccc'}"></span>
-                <input type="color" class="folder-color-input" data-folder="${folder}">
+                <span class="folder-color-preview" role="button" tabindex="0" aria-label="בחר צבע לתיקייה ${safe}" title="צבע התיקייה"></span>
+                <input type="color" class="folder-color-input" tabindex="-1" aria-hidden="true">
             </div>
         `;
-        div.onclick = (e) => {
-            if (e.target.tagName !== 'BUTTON' && e.target.tagName !== 'INPUT') selectFolder(folder);
+        const preview = div.querySelector('.folder-color-preview');
+        preview.style.background = folderColors[folder] || 'var(--surface-3)';
+        if (folderColors[folder]) div.querySelector('.folder-icon').style.setProperty('--folder-color', folderColors[folder]);
+        const input = div.querySelector('input');
+        input.setAttribute('data-folder', folder);
+        if (folderColors[folder]) input.value = folderColors[folder];
+
+        const activate = () => {
+            selectFolder(folder);
+            if (!isSidebarPinned()) setSidebarOpen(false);
         };
+        div.onclick = (e) => {
+            if (e.target.closest('button, input, .folder-color-preview')) return;
+            activate();
+        };
+        div.addEventListener('keydown', (e) => {
+            if (e.target !== div) return;
+            if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); activate(); }
+            if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+                e.preventDefault();
+                const sib = e.key === 'ArrowDown' ? div.nextElementSibling : div.previousElementSibling;
+                if (sib) sib.focus();
+            }
+        });
         if (!isFixed) {
             const delBtn = div.querySelector('.delete-folder-btn');
             if(delBtn) delBtn.onclick = (e) => { e.stopPropagation(); deleteFolder(folder); };
         }
-        const input = div.querySelector('input');
         input.addEventListener('change', (e) => { updateFolderColor(folder, e.target.value); });
-        div.querySelector('.folder-color-preview').onclick = (e) => { e.stopPropagation(); input.click(); };
+        preview.onclick = (e) => { e.stopPropagation(); input.click(); };
+        preview.onkeydown = (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); input.click(); } };
         list.appendChild(div);
     });
     contentContainer.innerHTML = '';
     [...fixedFolders, ...folders].forEach(folder => {
         if (folder === 'תיקייה כללית') return;
-        const div = document.createElement('div');
+        const div = document.createElement('section');
         div.className = 'folder-container';
         div.setAttribute('data-folder', folder);
-        const titleEl = document.createElement('div');
+        const titleEl = document.createElement('h2');
         titleEl.className = 'folder-title';
-        titleEl.textContent = folder === 'משימות שהושלמו' ? '✅ משימות שהושלמו' : folder;
+        titleEl.textContent = folder;
+        const countEl = document.createElement('span');
+        countEl.className = 'count';
+        titleEl.appendChild(countEl);
         div.appendChild(titleEl);
-        if (folder === 'אשפה') {
-            const trashBtn = document.createElement('button');
-            trashBtn.className = 'clear-trash-btn';
-            trashBtn.id = 'clearTrashBtn';
-            trashBtn.onclick = clearTrash;
-            div.appendChild(trashBtn);
-        }
         const notesEl = document.createElement('div');
         notesEl.className = 'notes-container';
         notesEl.setAttribute('data-folder', folder);
         div.appendChild(notesEl);
         contentContainer.appendChild(div);
     });
+    updateFolderCounts();
 }
 
 function updateFolderColor(folder, color) {
@@ -548,29 +526,29 @@ function updateFolderColor(folder, color) {
 function selectFolder(folder) {
     selectedFolder = folder;
     isFolderViewActive = true;
-    document.querySelectorAll('.folder-item').forEach(i => i.classList.remove('selected'));
-    const currentItem = document.querySelector(`.folder-item[data-folder="${folder}"]`);
-    if(currentItem) currentItem.classList.add('selected');
+    document.querySelectorAll('.folder-item').forEach(i => { i.classList.remove('selected'); i.removeAttribute('aria-current'); });
+    const currentItem = [...document.querySelectorAll('.folder-item')].find(i => i.getAttribute('data-folder') === folder);
+    if(currentItem) { currentItem.classList.add('selected'); currentItem.setAttribute('aria-current', 'true'); }
     const badge = document.getElementById('boardFolderBadge');
-    if (badge) { badge.textContent = '📁 ' + folder; badge.style.display = 'inline-block'; }
+    if (badge) { badge.textContent = folder; badge.style.display = 'inline-flex'; }
     if (isBoardViewActive) {
         loadNotesWithoutFolderView();
     } else {
-        const h1 = document.querySelector('h1');
-        if(h1) h1.style.display = 'none';
+        setPageHeaderVisible(false);
         const sec = document.getElementById('createNoteSection');
         if(sec) sec.style.display = 'none';
         const back = document.getElementById('backBtn');
-        if(back) back.style.display = 'block';
+        if(back) back.style.display = 'inline-flex';
         loadNotesWithoutFolderView();
         document.querySelectorAll('.folder-container').forEach(c => c.classList.remove('active'));
-        const container = document.querySelector(`.folder-container[data-folder="${folder}"]`);
+        const container = [...document.querySelectorAll('.folder-container')].find(c => c.getAttribute('data-folder') === folder);
         if (container) container.classList.add('active');
+        window.scrollTo({ top: 0 });
     }
 }
 
 function deleteFolder(folder) {
-    showConfirm(`למחוק את התיקייה "${folder}"? הפתקים יועברו לתיקייה הכללית.`, () => {
+    showConfirm(`הפתקים שבה יועברו לתיקייה הכללית.`, () => {
         let folders = getFolders().filter(f => f !== folder);
         localStorage.setItem('folders', JSON.stringify(folders));
         let notes = getNotes();
@@ -578,8 +556,11 @@ function deleteFolder(folder) {
         localStorage.setItem('notes', JSON.stringify(notes));
         showMainContent();
         loadFolders();
-    });
+        showToast(`התיקייה "${folder}" נמחקה`);
+    }, null, { title: `למחוק את התיקייה "${folder}"?`, confirmText: 'מחק תיקייה' });
 }
+
+let _justAddedNoteId = null;
 
 function createNote(fromModal = false) {
     let text, due;
@@ -590,7 +571,12 @@ function createNote(fromModal = false) {
         text = document.getElementById('note-text').value;
         due = document.getElementById('note-due').value;
     }
-    if (!text || !text.trim()) { showAlert('נא לכתוב משהו בפתק'); return; }
+    if (!text || !text.trim()) {
+        showToast('נא לכתוב משהו בפתק');
+        const field = document.getElementById(fromModal ? 'new-note-text' : 'note-text');
+        if (field) field.focus();
+        return;
+    }
     const note = {
         id: (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : (Date.now().toString() + Math.random().toString(36).slice(2)),
         text: text,
@@ -625,10 +611,11 @@ function createNote(fromModal = false) {
     }
     clearForm();
     if (fromModal) {
-        const modal = document.getElementById('newNoteModal');
-        if(modal) modal.style.display = 'none';
+        closeNewNoteModal();
     }
+    _justAddedNoteId = note.id;
     loadNotesWithoutFolderView();
+    _justAddedNoteId = null;
 }
 
 function loadNotesWithoutFolderView() {
@@ -637,35 +624,30 @@ function loadNotesWithoutFolderView() {
     document.querySelectorAll('.notes-container').forEach(c => c.innerHTML = '');
     const board = document.getElementById('boardContainer');
     if (board) board.innerHTML = '';
-    
+
     // מיון לפי נעיצה
     notes.sort((a, b) => Number(b.pinned || 0) - Number(a.pinned || 0));
 
     const existingTrashBtn = document.getElementById('floatingTrashBtn');
-    if (existingTrashBtn) existingTrashBtn.remove(); 
+    if (existingTrashBtn) existingTrashBtn.remove();
 
     if (selectedFolder === 'אשפה') {
         const hasTrash = notes.some(n => n.folder === 'אשפה');
         if (hasTrash) {
             const trashBtn = document.createElement('button');
             trashBtn.id = 'floatingTrashBtn';
-            trashBtn.innerHTML = '🗑️ נקה אשפה';
-            // שיניתי את המיקום כאן: bottom: 90px
-            trashBtn.style.cssText = 'position:fixed; bottom:90px; left:20px; z-index:9000; background:#e53e3e; color:white; padding:12px 20px; border-radius:50px; border:none; cursor:pointer; box-shadow:0 4px 10px rgba(0,0,0,0.3); font-weight:bold; animation: popIn 0.3s ease;';
+            trashBtn.className = 'fab fab-danger';
+            trashBtn.innerHTML = `${ICONS.delete}<span>ריקון האשפה</span>`;
             trashBtn.onclick = clearTrash;
             document.body.appendChild(trashBtn);
-            if(!document.getElementById('animStyle')) {
-                const s = document.createElement('style');
-                s.id = 'animStyle';
-                s.innerHTML = `@keyframes popIn { from { transform: scale(0.8); opacity: 0; } to { transform: scale(1); opacity: 1; } }`;
-                document.head.appendChild(s);
-            }
         }
     }
 
+    const perContainerIndex = new Map();
     notes.forEach(note => {
         if (isFolderViewActive && selectedFolder && note.folder !== selectedFolder) return;
         const el = createNoteElement(note, isDarkMode);
+        if (note.id === _justAddedNoteId) el.classList.add('just-added');
         if (isBoardViewActive) {
             el.classList.add('board-note');
             let pos = notePositions[note.id] || { left: 50, top: 50, width: 250, height: 250 };
@@ -676,65 +658,185 @@ function loadNotesWithoutFolderView() {
             if(board) board.appendChild(el);
             setupDragAndResize(el);
         } else {
-            const container = document.querySelector(`.notes-container[data-folder="${note.folder}"]`);
-            if (container) container.appendChild(el);
+            const container = [...document.querySelectorAll('.notes-container')].find(c => c.getAttribute('data-folder') === note.folder);
+            if (container) {
+                const i = perContainerIndex.get(container) || 0;
+                perContainerIndex.set(container, i + 1);
+                el.style.setProperty('--i', Math.min(i, 12));
+                container.appendChild(el);
+            }
         }
     });
+    if (!isBoardViewActive) renderEmptyStates();
+    updateFolderCounts();
+    updateSubtitle();
     searchNotes();
 }
 
+const EMPTY_STATES = {
+    'תיקייה כללית': { icon: 'inbox', title: 'אין פתקים עדיין', text: 'כתוב משהו בתיבה למעלה כדי להתחיל.' },
+    'משימות שהושלמו': { icon: 'checkCircle', title: 'עוד לא הושלמו משימות', text: 'משימה שתסמן כהושלמה תופיע כאן.' },
+    'אשפה': { icon: 'delete', title: 'האשפה ריקה', text: 'פתקים שתמחק יחכו כאן עד שתרוקן אותה.' }
+};
+
+function renderEmptyStates() {
+    document.querySelectorAll('.notes-container').forEach(c => {
+        if (c.querySelector('.note')) return;
+        const folder = c.getAttribute('data-folder');
+        const cfg = EMPTY_STATES[folder] || { icon: 'folder', title: 'התיקייה ריקה', text: 'אפשר להעביר לכאן פתקים דרך כפתור התיקייה שבכל פתק.' };
+        const empty = document.createElement('div');
+        empty.className = 'empty-state';
+        empty.innerHTML = `${ICONS[cfg.icon]}<strong></strong><span></span>`;
+        empty.querySelector('strong').textContent = cfg.title;
+        empty.querySelector('span').textContent = cfg.text;
+        c.appendChild(empty);
+    });
+}
+
+function updateFolderCounts() {
+    const counts = {};
+    getNotes().forEach(n => { counts[n.folder] = (counts[n.folder] || 0) + 1; });
+    document.querySelectorAll('.folder-item').forEach(item => {
+        const c = counts[item.getAttribute('data-folder')] || 0;
+        const el = item.querySelector('.folder-count');
+        if (el) el.textContent = c ? c : '';
+    });
+    document.querySelectorAll('.folder-container').forEach(fc => {
+        const c = counts[fc.getAttribute('data-folder')] || 0;
+        const el = fc.querySelector('.folder-title .count');
+        if (el) el.textContent = c ? c : '';
+    });
+}
+
+function updateSubtitle() {
+    const el = document.getElementById('appSubtitle');
+    if (!el) return;
+    const now = Date.now();
+    const open = getNotes().filter(n => !n.completed && n.folder !== 'אשפה' && n.folder !== 'משימות שהושלמו');
+    const overdue = open.filter(n => n.dueTime && new Date(n.dueTime).getTime() < now).length;
+    const date = new Date().toLocaleDateString('he-IL', { weekday: 'long', day: 'numeric', month: 'long' });
+    let text = `${date} · ${open.length === 0 ? 'אין משימות פתוחות' : open.length === 1 ? 'משימה פתוחה אחת' : open.length + ' משימות פתוחות'}`;
+    if (overdue) text += ` · ${overdue} באיחור`;
+    if (el.textContent !== text) el.textContent = text;
+}
+
+function startOfDay(d) { const x = new Date(d); x.setHours(0, 0, 0, 0); return x.getTime(); }
+
+function formatDue(value) {
+    const date = new Date(value);
+    if (isNaN(date)) return '';
+    const time = date.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' });
+    const dayDiff = Math.round((startOfDay(date) - startOfDay(new Date())) / 86400000);
+    if (dayDiff === 0) return 'היום ' + time;
+    if (dayDiff === 1) return 'מחר ' + time;
+    if (dayDiff === -1) return 'אתמול ' + time;
+    return date.toLocaleDateString('he-IL', { day: 'numeric', month: 'numeric' }) + ' ' + time;
+}
+
+function formatRelative(iso) {
+    const date = new Date(iso);
+    if (isNaN(date)) return '';
+    const sec = Math.round((date.getTime() - Date.now()) / 1000);
+    const abs = Math.abs(sec);
+    if (abs < 60) return 'עכשיו';
+    try {
+        const rtf = new Intl.RelativeTimeFormat('he', { numeric: 'auto' });
+        if (abs < 3600) return rtf.format(Math.round(sec / 60), 'minute');
+        if (abs < 86400) return rtf.format(Math.round(sec / 3600), 'hour');
+        if (abs < 7 * 86400) return rtf.format(Math.round((startOfDay(date) - startOfDay(new Date())) / 86400000), 'day');
+    } catch (e) {}
+    return date.toLocaleDateString('he-IL');
+}
+
+function toLocalInputValue(value) {
+    const d = new Date(value);
+    if (isNaN(d)) return '';
+    const pad = n => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+function closeAllNoteMenus(except) {
+    document.querySelectorAll('.menu').forEach(m => {
+        if (m === except) return;
+        m.style.display = 'none';
+        const btn = m.parentElement && m.parentElement.querySelector('.menu-btn');
+        if (btn) btn.setAttribute('aria-expanded', 'false');
+    });
+}
+
+function moveNoteToFolder(note, target) {
+    note.folder = target;
+    if (target === 'אשפה') { note.color = folderColors['אשפה'] || '#bdc3c7'; }
+    else if (folderColors[target]) { note.color = folderColors[target]; }
+    else { note.color = note.customColor || 'green'; }
+    updateNoteInStorage(note);
+    loadNotesWithoutFolderView();
+    showToast(`הועבר אל "${target}"`);
+}
+
 function createNoteElement(note, isDarkMode) {
-    const div = document.createElement('div');
+    const div = document.createElement('article');
     div.className = `note ${validColors.includes(note.color) ? note.color : ''}`;
     if (note.pinned) div.classList.add('pinned');
     div.setAttribute('data-id', note.id);
-    if (!validColors.includes(note.color)) div.style.backgroundColor = note.color;
+    if (!validColors.includes(note.color) && note.color) div.style.setProperty('--tint', note.color);
     if (note.completed) div.classList.add('completed');
     if (note.notified) div.classList.add('notified');
 
-    const date = new Date(note.created);
-    const dateStr = date.toLocaleDateString('he-IL');
-    const timeStr = date.toLocaleTimeString('he-IL', {hour:'2-digit', minute:'2-digit'});
+    const created = new Date(note.created);
+    const createdFull = isNaN(created) ? '' : created.toLocaleString('he-IL', { dateStyle: 'full', timeStyle: 'short' });
     const now = Date.now();
     const dueTimeMs = note.dueTime ? new Date(note.dueTime).getTime() : 0;
     const isOverdue = note.dueTime && dueTimeMs < now && !note.completed;
-    const dueTimeDisplay = note.dueTime ? new Date(note.dueTime).toLocaleString('he-IL', {hour:'2-digit', minute:'2-digit'}) : '';
-    const dueStyle = isOverdue ? 'color: #e53e3e; font-weight: bold;' : 'color: #718096;';
+    const dueTimeDisplay = note.dueTime ? formatDue(note.dueTime) : '';
+    const inTrash = note.folder === 'אשפה';
+    const deleteLabel = inTrash ? 'מחק לצמיתות' : 'העבר לאשפה';
+    const folderColorDot = f => {
+        if (f === 'אשפה') return folderColors[f] || 'var(--text-3)';
+        return folderColors[f] || 'var(--text-3)';
+    };
 
     div.innerHTML = `
         <div class="note-header">
-            <button class="extend-btn" title="שנה זמן">${ICONS.clock}</button>
-            <div class="folder-wrapper" style="position:relative;">
-                <button class="menu-btn" title="תיקייה">${ICONS.folder}</button>
-                <div class="menu">
-                    ${getAllFolderNames().map(f => `<div class="menu-item" data-folder="${escapeHTML(f)}">${escapeHTML(f)}</div>`).join('')}
-                </div>
-            </div>
-            <button class="pin-btn ${note.pinned ? 'active' : ''}" title="נעץ">${ICONS.pin}</button>
-            <button class="edit-btn" title="ערוך">${ICONS.edit}</button>
-            <button class="delete-btn" title="${note.folder === 'אשפה' ? 'מחק לצמיתות' : 'העבר לאשפה'}" aria-label="${note.folder === 'אשפה' ? 'מחק לצמיתות' : 'העבר לאשפה'}">${note.folder === 'אשפה' ? ICONS.delete : '✖'}</button>
             <button class="complete-btn ${note.completed ? 'active' : ''}" aria-pressed="${note.completed ? 'true' : 'false'}" title="${note.completed ? 'לחץ לביטול הסימון' : 'סמן כהושלם'}" aria-label="${note.completed ? 'בטל סימון הושלם' : 'סמן כהושלם'}">${ICONS.check}</button>
-        </div>
-        <div class="note-toolbar">
-            <button data-cmd="bold" title="מודגש">${ICONS.bold}</button>
-            <button data-cmd="italic" title="נטוי">${ICONS.italic}</button>
-            <button data-cmd="underline" title="קו תחתון">${ICONS.underline}</button>
-            <button data-cmd="increaseFontSize" title="הגדל טקסט">${ICONS.zoomIn}</button>
-            <button data-cmd="decreaseFontSize" title="הקטן טקסט">${ICONS.zoomOut}</button>
-            <div class="note-text-color-picker" style="position:relative; width:28px; height:28px; overflow:hidden;">
-                <span class="note-text-color-preview" style="display:flex; justify-content:center; align-items:center; width:100%; height:100%; color:${note.textColor || 'currentColor'};">${ICONS.palette}</span>
-                <input type="color" class="note-text-color-input" style="position:absolute; top:0; left:0; width:100%; height:100%; opacity:0; cursor:pointer;">
+            <div class="note-actions">
+                <button class="pin-btn ${note.pinned ? 'active' : ''}" aria-pressed="${note.pinned ? 'true' : 'false'}" title="${note.pinned ? 'בטל נעיצה' : 'נעץ למעלה'}" aria-label="${note.pinned ? 'בטל נעיצה' : 'נעץ למעלה'}">${ICONS.pin}</button>
+                <button class="edit-btn" aria-pressed="false" title="ערוך" aria-label="ערוך פתק">${ICONS.edit}</button>
+                <button class="extend-btn" title="קבע זמן" aria-label="קבע זמן תזכורת">${ICONS.clock}</button>
+                <div class="folder-wrapper">
+                    <button class="menu-btn" title="העבר לתיקייה" aria-label="העבר לתיקייה" aria-haspopup="menu" aria-expanded="false">${ICONS.folder}</button>
+                    <div class="menu" role="menu" aria-label="העבר לתיקייה">
+                        <div class="menu-label" aria-hidden="true">העבר לתיקייה</div>
+                        ${getAllFolderNames().map(f => `<div class="menu-item${f === note.folder ? ' is-current' : ''}" role="menuitem" tabindex="-1" data-folder="${escapeHTML(f)}"><span class="dot" style="background:${escapeHTML(folderColorDot(f))}"></span>${escapeHTML(f)}</div>`).join('')}
+                    </div>
+                </div>
+                <button class="delete-btn" title="${deleteLabel}" aria-label="${deleteLabel}">${ICONS.delete}</button>
             </div>
         </div>
-        <div class="note-content" contenteditable="false" ${note.textColor ? `style="color: ${escapeHTML(note.textColor)}"` : ''}></div>
-        <div class="note-meta" style="display: flex; justify-content: space-between; align-items: center; padding-top: 6px; font-size: 0.8em; color: #718096; gap: 5px;">
-            <div title="נוצר ב" style="display: flex; align-items: center; gap: 3px;">
-                <span>📅</span> ${dateStr} <span style="margin-right: 3px;">🕒</span> ${timeStr}
+        <div class="note-toolbar" role="toolbar" aria-label="עיצוב טקסט">
+            <button data-cmd="bold" title="מודגש" aria-label="מודגש">${ICONS.bold}</button>
+            <button data-cmd="italic" title="נטוי" aria-label="נטוי">${ICONS.italic}</button>
+            <button data-cmd="underline" title="קו תחתון" aria-label="קו תחתון">${ICONS.underline}</button>
+            <span class="toolbar-sep" aria-hidden="true"></span>
+            <button data-cmd="increaseFontSize" title="הגדל טקסט" aria-label="הגדל טקסט">${ICONS.zoomIn}</button>
+            <button data-cmd="decreaseFontSize" title="הקטן טקסט" aria-label="הקטן טקסט">${ICONS.zoomOut}</button>
+            <div class="note-text-color-picker" title="צבע טקסט">
+                <span class="note-text-color-preview" aria-hidden="true">${ICONS.palette}</span>
+                <input type="color" class="note-text-color-input" aria-label="צבע טקסט">
             </div>
-            ${dueTimeDisplay ? `<div title="תוקף" style="${dueStyle}; display: flex; align-items: center; gap: 2px;">🏁 ${dueTimeDisplay}</div>` : ''}
         </div>
-        ${isBoardViewActive ? `<div class="resize-handle-bottom-right"></div>` : ''}
+        <div class="note-content" contenteditable="false"></div>
+        <div class="note-meta">
+            ${dueTimeDisplay ? `<span class="meta-chip ${isOverdue ? 'is-overdue' : 'is-due'}" title="${isOverdue ? 'באיחור' : 'זמן ביצוע'}">${ICONS.alarm}${isOverdue ? 'באיחור · ' : ''}${escapeHTML(dueTimeDisplay)}</span>` : ''}
+            <span class="meta-chip is-plain" title="נוצר ${escapeHTML(createdFull)}">${escapeHTML(formatRelative(note.created))}</span>
+        </div>
+        ${isBoardViewActive ? `<div class="resize-handle-bottom-right" aria-hidden="true"></div>` : ''}
     `;
+
+    const content = div.querySelector('.note-content');
+    if (note.textColor) content.style.color = note.textColor;
+    const colorPreview = div.querySelector('.note-text-color-preview');
+    if (note.textColor) colorPreview.style.color = note.textColor;
 
     div.querySelector('.delete-btn').onclick = () => {
         // אשפה → מחיקה צמיתה | משימות שהושלמו → אשפה | כל השאר → אשפה
@@ -750,6 +852,7 @@ function createNoteElement(note, isDarkMode) {
             completeBtn.setAttribute('aria-label', 'סמן כהושלם');
             completeBtn.title = 'סמן כהושלם';
             completeBtn.classList.remove('active');
+            showToast('הוחזר לתיקייה הכללית');
         } else {
             note.completed = true;
             note.folder = 'משימות שהושלמו';
@@ -760,34 +863,55 @@ function createNoteElement(note, isDarkMode) {
             showToast('הועבר למשימות שהושלמו ✓');
         }
         updateNoteInStorage(note);
-        loadNotesWithoutFolderView();
+        // רגע קצר כדי לראות את הסימון לפני שהפתק עובר תיקייה
+        setTimeout(loadNotesWithoutFolderView, 180);
     };
     div.querySelector('.pin-btn').onclick = () => togglePin(note.id);
     div.querySelector('.extend-btn').onclick = () => {
         openDateModal(note.dueTime, (newTime) => {
-            if (newTime) { note.dueTime = newTime; note.notified = false; note.completed = false; updateNoteInStorage(note); loadNotesWithoutFolderView(); }
+            if (newTime) { note.dueTime = newTime; note.notified = false; note.completed = false; updateNoteInStorage(note); loadNotesWithoutFolderView(); showToast('התזכורת נשמרה · ' + formatDue(newTime)); }
         });
     };
 
     const editBtn = div.querySelector('.edit-btn');
     const toolbar = div.querySelector('.note-toolbar');
-    const content = div.querySelector('.note-content');
     content.textContent = note.text; // בטוח מ-XSS
-    
+
     editBtn.onclick = () => {
         const isEditing = toolbar.style.display === 'flex';
         if (isEditing) {
             toolbar.style.display = 'none'; content.contentEditable = 'false'; note.text = content.innerText; updateNoteInStorage(note);
+            editBtn.setAttribute('aria-pressed', 'false');
         } else {
             document.querySelectorAll('.note-toolbar').forEach(t => t.style.display = 'none');
             document.querySelectorAll('.note-content').forEach(c => c.contentEditable = 'false');
+            document.querySelectorAll('.edit-btn').forEach(b => b.setAttribute('aria-pressed', 'false'));
             const rect = div.getBoundingClientRect();
-            if (rect.top < 120) { toolbar.style.top = '45px'; } else { toolbar.style.top = '-55px'; }
+            if (rect.top < 120) { toolbar.style.top = '44px'; } else { toolbar.style.top = '-50px'; }
             toolbar.style.display = 'flex'; content.contentEditable = 'true'; content.focus();
+            editBtn.setAttribute('aria-pressed', 'true');
+            // סמן בסוף הטקסט
+            try {
+                const range = document.createRange();
+                range.selectNodeContents(content);
+                range.collapse(false);
+                const sel = window.getSelection();
+                sel.removeAllRanges();
+                sel.addRange(range);
+            } catch (e) {}
         }
     };
+    content.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && content.contentEditable === 'true') {
+            e.preventDefault();
+            e.stopPropagation();
+            editBtn.click();
+            editBtn.focus();
+        }
+    });
 
     toolbar.querySelectorAll('button[data-cmd]').forEach(btn => {
+        btn.onmousedown = (e) => e.preventDefault(); // שומר על הבחירה בטקסט
         btn.onclick = (e) => {
             e.preventDefault(); const cmd = btn.dataset.cmd;
             if (cmd === 'increaseFontSize') document.execCommand('fontSize', false, '4');
@@ -797,39 +921,53 @@ function createNoteElement(note, isDarkMode) {
     });
 
     const colorInput = div.querySelector('.note-text-color-input');
-    const colorPreview = div.querySelector('.note-text-color-preview');
+    if (note.textColor && /^#[0-9a-f]{6}$/i.test(note.textColor)) colorInput.value = note.textColor;
     colorInput.oninput = (e) => { const val = e.target.value; content.style.color = val; note.textColor = val; colorPreview.style.color = val; };
     colorInput.onchange = () => updateNoteInStorage(note);
 
     const menuBtn = div.querySelector('.menu-btn');
     const menu = div.querySelector('.menu');
+    const menuItems = [...menu.querySelectorAll('.menu-item')];
+    const closeMenu = (focusBtn) => {
+        menu.style.display = 'none';
+        div.style.zIndex = '';
+        menuBtn.setAttribute('aria-expanded', 'false');
+        if (focusBtn) menuBtn.focus();
+    };
     menuBtn.onclick = (e) => {
         e.stopPropagation();
         if (window.innerWidth <= 768) {
-            showFolderBottomSheet(note);
+            showFolderBottomSheet(note, menuBtn);
             return;
         }
-        document.querySelectorAll('.menu').forEach(m => { if(m !== menu) m.style.display = 'none'; });
+        closeAllNoteMenus(menu);
         document.querySelectorAll('.note').forEach(n => n.style.zIndex = '');
         if (menu.style.display === 'block') {
-            menu.style.display = 'none';
-            div.style.zIndex = '';
+            closeMenu(false);
         } else {
             menu.style.display = 'block';
             div.style.zIndex = '5000';
+            menuBtn.setAttribute('aria-expanded', 'true');
+            const current = menuItems.find(i => i.classList.contains('is-current')) || menuItems[0];
+            if (current && e.detail === 0) current.focus(); // פתיחה מהמקלדת
         }
     };
 
-    menu.querySelectorAll('.menu-item').forEach(item => {
+    menu.addEventListener('keydown', (e) => {
+        const idx = menuItems.indexOf(document.activeElement);
+        if (e.key === 'ArrowDown') { e.preventDefault(); (menuItems[idx + 1] || menuItems[0]).focus(); }
+        else if (e.key === 'ArrowUp') { e.preventDefault(); (menuItems[idx - 1] || menuItems[menuItems.length - 1]).focus(); }
+        else if (e.key === 'Escape' || e.key === 'Tab') { if (e.key === 'Escape') e.preventDefault(); e.stopPropagation(); closeMenu(true); }
+        else if ((e.key === 'Enter' || e.key === ' ') && idx >= 0) { e.preventDefault(); menuItems[idx].click(); }
+    });
+
+    menuItems.forEach(item => {
         item.onclick = (e) => {
-            e.stopPropagation(); const target = item.getAttribute('data-folder'); note.folder = target;
-            if (target === 'אשפה') { note.color = folderColors['אשפה'] || '#bdc3c7'; } 
-            else if (folderColors[target]) { note.color = folderColors[target]; } 
-            else { note.color = note.customColor || 'green'; }
-            updateNoteInStorage(note); loadNotesWithoutFolderView();
+            e.stopPropagation();
+            moveNoteToFolder(note, item.getAttribute('data-folder'));
         };
     });
-    
+
     content.addEventListener('input', function() { note.text = this.innerText; updateNoteInStorage(note); });
     return div;
 }
@@ -838,79 +976,64 @@ function createNoteElement(note, isDarkMode) {
 
 function createSettingsFloatingButton() {
     if (document.getElementById('settingsFloatingBtn')) return;
-    const btn = document.createElement('div');
+    const btn = document.createElement('button');
     btn.id = 'settingsFloatingBtn';
+    btn.className = 'fab';
     btn.innerHTML = ICONS.settings;
+    btn.title = 'צליל התראה';
+    btn.setAttribute('aria-label', 'הגדרות צליל התראה');
     btn.onclick = showSettingsModal;
     document.body.appendChild(btn);
 }
 
+const SOUND_LABELS = { sound1: 'צליל 1 · עדין', sound2: 'צליל 2 · שעון', sound3: 'צליל 3 · פעמון' };
+
 function showSettingsModal() {
-    const modal = document.getElementById('settingsModal');
-    if (!modal) {
-        createSettingsModal();
-        return showSettingsModal();
-    }
-    
-    document.querySelectorAll('.sound-option').forEach(opt => {
-        opt.classList.remove('active');
-        if (opt.dataset.sound === currentSoundKey) {
-            opt.classList.add('active');
-        }
+    const d = createDialog({
+        id: 'settingsModal',
+        title: 'צליל התראה',
+        message: 'הצליל שיתנגן כשמגיע זמן של משימה.',
+        icon: 'settings'
     });
-    
-    modal.style.display = 'flex';
-}
-
-function createSettingsModal() {
-    const modal = document.createElement('div');
-    modal.id = 'settingsModal';
-    modal.style.cssText = 'position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); display:none; justify-content:center; align-items:center; z-index:10000;';
-    
-    const content = document.createElement('div');
-    content.className = 'settings-modal-content';
-    content.style.cssText = 'background:white; padding:20px; border-radius:8px; width:300px; text-align:right; box-shadow: 0 4px 15px rgba(0,0,0,0.2);';
-    if (document.body.classList.contains('dark-mode')) {
-        content.style.background = '#2d3748';
-        content.style.color = 'white';
-    }
-
-    content.innerHTML = `
-        <h3 style="margin-bottom:15px; border-bottom:1px solid #ccc; padding-bottom:10px;">🔊 הגדרות צליל התראה</h3>
-        <div id="soundOptionsList">
-            <div class="sound-option" data-sound="sound1">
-                <span>🎵 צליל 1 (Sound 1)</span>
-                <button onclick="previewSound('sound1')" style="background:none; border:none; cursor:pointer;">▶️</button>
-            </div>
-            <div class="sound-option" data-sound="sound2">
-                <span>⏰ צליל 2 (Sound 2)</span>
-                <button onclick="previewSound('sound2')" style="background:none; border:none; cursor:pointer;">▶️</button>
-            </div>
-            <div class="sound-option" data-sound="sound3">
-                <span>🔔 צליל 3 (Sound 3)</span>
-                <button onclick="previewSound('sound3')" style="background:none; border:none; cursor:pointer;">▶️</button>
-            </div>
-        </div>
-        <button id="closeSettingsBtn" style="margin-top:15px; width:100%; padding:10px; background:#3182ce; color:white; border:none; border-radius:5px; cursor:pointer;">שמור וסגור</button>
-    `;
-
-    modal.appendChild(content);
-    document.body.appendChild(modal);
-
-    document.getElementById('closeSettingsBtn').onclick = () => {
-        modal.style.display = 'none';
+    const group = document.createElement('div');
+    group.id = 'soundOptionsList';
+    group.setAttribute('role', 'radiogroup');
+    group.setAttribute('aria-label', 'בחירת צליל');
+    Object.keys(SOUND_FILES).forEach(key => {
+        const opt = document.createElement('div');
+        opt.className = 'sound-option' + (key === currentSoundKey ? ' active' : '');
+        opt.dataset.sound = key;
+        opt.setAttribute('role', 'radio');
+        opt.setAttribute('aria-checked', key === currentSoundKey ? 'true' : 'false');
+        opt.tabIndex = key === currentSoundKey ? 0 : -1;
+        opt.innerHTML = `<span class="radio-dot" aria-hidden="true"></span><span class="sound-label"></span><button type="button" class="icon-btn" aria-label="השמע">${ICONS.play}</button>`;
+        opt.querySelector('.sound-label').textContent = SOUND_LABELS[key] || key;
+        opt.querySelector('button').setAttribute('aria-label', 'השמע ' + (SOUND_LABELS[key] || key));
+        opt.querySelector('button').onclick = (e) => { e.stopPropagation(); previewSound(key); };
+        group.appendChild(opt);
+    });
+    const options = [...group.querySelectorAll('.sound-option')];
+    const choose = (opt) => {
+        options.forEach(o => { o.classList.remove('active'); o.setAttribute('aria-checked', 'false'); o.tabIndex = -1; });
+        opt.classList.add('active');
+        opt.setAttribute('aria-checked', 'true');
+        opt.tabIndex = 0;
+        currentSoundKey = opt.dataset.sound;
+        localStorage.setItem('selectedSound', currentSoundKey);
+        alertSound = new Audio(SOUND_FILES[currentSoundKey]);
     };
-
-    modal.querySelectorAll('.sound-option').forEach(opt => {
-        opt.onclick = (e) => {
-            if (e.target.tagName === 'BUTTON') return;
-            document.querySelectorAll('.sound-option').forEach(el => el.classList.remove('active'));
-            opt.classList.add('active');
-            currentSoundKey = opt.dataset.sound;
-            localStorage.setItem('selectedSound', currentSoundKey);
-            alertSound = new Audio(SOUND_FILES[currentSoundKey]);
+    options.forEach((opt, i) => {
+        opt.onclick = (e) => { if (e.target.closest('button')) return; choose(opt); };
+        opt.onkeydown = (e) => {
+            if (e.target !== opt) return;
+            if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); choose(opt); }
+            if (e.key === 'ArrowDown' || e.key === 'ArrowLeft') { e.preventDefault(); const n = options[(i + 1) % options.length]; choose(n); n.focus(); }
+            if (e.key === 'ArrowUp' || e.key === 'ArrowRight') { e.preventDefault(); const n = options[(i - 1 + options.length) % options.length]; choose(n); n.focus(); }
         };
     });
+    d.body.appendChild(group);
+    const done = d.addButton('סיום', 'primary', () => d.close());
+    (group.querySelector('.sound-option.active') || done).focus();
 }
 
 window.previewSound = function(key) {
@@ -918,45 +1041,59 @@ window.previewSound = function(key) {
     tempAudio.play().catch(e => console.error("Error playing sound:", e));
 };
 
+let _guideCloseFocus = null;
+
 function showGuideModal() {
     const modal = document.getElementById('guideModal');
     let contentContainer = modal.querySelector('.guide-modal-content');
-    
+
     contentContainer.innerHTML = `
-        <h2>ברוכים הבאים לאפליקציית הפתקים! 📝</h2>
+        <div class="dialog-icon">${ICONS.edit}</div>
+        <h2 id="guideTitle">ברוכים הבאים לפתקי משימות</h2>
+        <p>כל המשימות והרעיונות שלך במקום אחד, מסודרים בתיקיות ועם תזכורות.</p>
         <div class="guide-columns">
             <div class="guide-col">
                 <h3><span class="inline-icon">${ICONS.list}</span> תצוגת רשימה</h3>
-                <p>עבודה מסודרת לפי תיקיות. צור תיקיות חדשות, צבע אותן ונהל משימות שוטפות בצורה מאורגנת.</p>
+                <p>עבודה מסודרת לפי תיקיות. צור תיקיות, צבע אותן ונהל משימות שוטפות.</p>
             </div>
             <div class="guide-col">
                 <h3><span class="inline-icon">${ICONS.grid}</span> תצוגת לוח</h3>
-                <p>מרחב עבודה חופשי! גרור פתקים לכל מקום, שנה את גודלם וקבל תמונה רחבה על הכל.</p>
+                <p>מרחב חופשי במחשב: גרור פתקים לכל מקום ושנה את גודלם.</p>
             </div>
         </div>
-        <ul style="padding-right: 20px; line-height: 1.8; list-style-type: none;">
-            <li><span class="inline-icon">${ICONS.plus}</span> <strong>יצירה:</strong> הוסף פתקים חדשים בקלות מהסרגל או בכפתור הצף.</li>
-            <li><span class="inline-icon">${ICONS.pin}</span> <strong>נעיצה:</strong> הצמד פתקים חשובים לראש הרשימה.</li>
-            <li><span class="inline-icon">${ICONS.folder}</span> <strong>תיקיות:</strong> קטלג פתקים לתיקיות אישיות וצבעוניות.</li>
-            <li><span class="inline-icon">${ICONS.settings}</span> <strong>הגדרות צליל:</strong> בחר צליל התראה מועדף בלחיצה על כפתור התו.</li>
-            <li><span class="inline-icon">${ICONS.edit}</span> <strong>עריכה:</strong> לחץ על העיפרון לעיצוב טקסט (<span class="inline-icon">${ICONS.bold}</span>) וצבעים.</li>
-            <li><span class="inline-icon">${ICONS.clock}</span> <strong>תזכורות:</strong> קבע דד-ליין וקבל התראה כשהזמן עובר.</li>
-            <li><span class="inline-icon">${ICONS.delete}</span> <strong>אשפה:</strong> פתקים שנמחקים נשמרים באשפה לביטחון.</li>
+        <ul class="guide-list">
+            <li><span class="inline-icon">${ICONS.plus}</span><span><strong>יצירה:</strong> כתוב בתיבה למעלה ולחץ "הוסף פתק", או Ctrl+Enter.</span></li>
+            <li><span class="inline-icon">${ICONS.check}</span><span><strong>סיום משימה:</strong> לחץ על העיגול בפינת הפתק.</span></li>
+            <li><span class="inline-icon">${ICONS.pin}</span><span><strong>נעיצה:</strong> הצמד פתקים חשובים לראש הרשימה.</span></li>
+            <li><span class="inline-icon">${ICONS.folder}</span><span><strong>תיקיות:</strong> העבר פתקים לתיקיות אישיות וצבעוניות.</span></li>
+            <li><span class="inline-icon">${ICONS.edit}</span><span><strong>עריכה:</strong> לחץ על העיפרון לעריכת טקסט, הדגשה וצבע.</span></li>
+            <li><span class="inline-icon">${ICONS.clock}</span><span><strong>תזכורות:</strong> קבע זמן וקבל התראה עם צליל לבחירתך.</span></li>
+            <li><span class="inline-icon">${ICONS.delete}</span><span><strong>אשפה:</strong> פתקים שנמחקים נשמרים באשפה עד שתרוקן אותה.</span></li>
         </ul>
-        <div class="copyright-footer">&copy; 2026 כל הזכויות שמורות - אדיר אקוע</div>
-        <div style="margin-top:20px; padding:10px; background:rgba(0,0,0,0.05); border-radius:5px; text-align:center;">
-            <label style="cursor:pointer; font-weight:bold; display:flex; align-items:center; justify-content:center; gap:8px;">
-                <input type="checkbox" id="markGuideRead" style="transform:scale(1.3);"> קראתי והבנתי / אל תציג שוב
-            </label>
+        <div class="guide-shortcuts" aria-label="קיצורי מקלדת">
+            <span><kbd>/</kbd> חיפוש</span>
+            <span><kbd>N</kbd> פתק חדש</span>
+            <span><kbd>Ctrl</kbd>+<kbd>Enter</kbd> שמירה</span>
+            <span><kbd>Esc</kbd> סגירה</span>
         </div>
-        <button id="closeGuideModalAction" style="margin-top:10px; width:100%; padding:12px; background:#4a5568; color:white; border:none; border-radius:6px; cursor:pointer; font-size:1.1em;">סגור והתחל לעבוד</button>
+        <div class="guide-footer">
+            <label class="guide-check">
+                <input type="checkbox" id="markGuideRead"> קראתי והבנתי, אל תציג שוב
+            </label>
+            <button id="closeGuideModalAction" class="btn btn-primary btn-block">בואו נתחיל</button>
+            <div class="copyright-footer">&copy; 2026 כל הזכויות שמורות - אדיר אקוע</div>
+        </div>
     `;
 
+    const trigger = document.activeElement;
     modal.style.display = 'flex';
+    modal.onkeydown = (e) => { if (e.key === 'Escape') { e.preventDefault(); handleGuideClose(); } };
+    modal.onmousedown = (e) => { if (e.target === modal) handleGuideClose(); };
     setTimeout(() => {
         const closeBtn = document.getElementById('closeGuideModalAction');
         if(closeBtn) closeBtn.onclick = handleGuideClose;
-        trapFocus(modal, document.getElementById('guideIcon'));
+        _guideCloseFocus = trapFocus(modal, trigger && trigger !== document.body ? trigger : null);
+        if (closeBtn) closeBtn.focus();
     }, 50);
 }
 
@@ -964,6 +1101,7 @@ function handleGuideClose() {
     const checkbox = document.getElementById('markGuideRead');
     if (checkbox && checkbox.checked) localStorage.setItem('hasSeenGuide_final_v1', 'true');
     document.getElementById('guideModal').style.display = 'none';
+    if (_guideCloseFocus) { _guideCloseFocus(); _guideCloseFocus = null; }
 }
 
 function closeGuideModal() { document.getElementById('guideModal').style.display = 'none'; }
@@ -975,11 +1113,30 @@ function searchNotes() {
     const s2 = document.getElementById('board-search-input');
     const val1 = s1 ? s1.value.toLowerCase() : '';
     const val2 = s2 ? s2.value.toLowerCase() : '';
-    const term = val1 || val2;
+    const term = (isBoardViewActive ? (val2 || val1) : (val1 || val2)).trim();
     document.querySelectorAll('.note').forEach(note => {
-        const text = note.innerText.toLowerCase();
+        const text = (note.querySelector('.note-content') || note).innerText.toLowerCase();
         note.style.display = text.includes(term) ? 'flex' : 'none';
     });
+    document.querySelectorAll('.notes-container').forEach(c => {
+        const old = c.querySelector('.no-results');
+        if (old) old.remove();
+        const notes = c.querySelectorAll('.note');
+        const empty = c.querySelector('.empty-state');
+        if (empty) empty.style.display = term ? 'none' : '';
+        if (!term || !notes.length) return;
+        if ([...notes].some(n => n.style.display !== 'none')) return;
+        const msg = document.createElement('p');
+        msg.className = 'no-results';
+        msg.textContent = `לא נמצאו פתקים עבור "${term}"`;
+        c.appendChild(msg);
+    });
+}
+
+function autosizeTextarea(el) {
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = Math.min(el.scrollHeight + 2, 320) + 'px';
 }
 
 function clearForm() {
@@ -987,6 +1144,8 @@ function clearForm() {
     if(document.getElementById('note-due')) document.getElementById('note-due').value = '';
     if(document.getElementById('new-note-text')) document.getElementById('new-note-text').value = '';
     if(document.getElementById('new-note-due')) document.getElementById('new-note-due').value = '';
+    const t = document.getElementById('note-text');
+    if (t) t.style.height = '';
 }
 
 function toggleDarkMode() {
@@ -997,26 +1156,44 @@ function toggleDarkMode() {
 
 function deleteNote(id, permanent) {
     if (permanent) {
-        showConfirm('למחוק את הפתק לצמיתות? לא ניתן לשחזר.', () => {
+        showConfirm('לא ניתן יהיה לשחזר אותו.', () => {
             let notes = getNotes().filter(n => n.id !== id);
             delete notePositions[id];
             localStorage.setItem('notePositions', JSON.stringify(notePositions));
             localStorage.setItem('notes', JSON.stringify(notes));
             loadNotesWithoutFolderView();
-        });
+            showToast('הפתק נמחק לצמיתות');
+        }, null, { title: 'למחוק את הפתק לצמיתות?', confirmText: 'מחק לצמיתות' });
         return;
     }
     let notes = getNotes();
     const note = notes.find(n => n.id === id);
+    let previous = null;
     if (note) {
+        previous = { folder: note.folder, color: note.color };
         note.folder = 'אשפה';
         note.color = folderColors['אשפה'] || '#bdc3c7';
     }
     localStorage.setItem('notes', JSON.stringify(notes));
     loadNotesWithoutFolderView();
+    if (previous) {
+        showToast('הפתק הועבר לאשפה', 5000, {
+            label: 'ביטול',
+            onClick: () => {
+                const all = getNotes();
+                const n = all.find(x => x.id === id);
+                if (n && n.folder === 'אשפה') {
+                    n.folder = previous.folder;
+                    n.color = previous.color;
+                    localStorage.setItem('notes', JSON.stringify(all));
+                    loadNotesWithoutFolderView();
+                }
+            }
+        });
+    }
 }
 
-function showFolderBottomSheet(note) {
+function showFolderBottomSheet(note, triggerEl) {
     let overlay = document.getElementById('mobileFolderSheetOverlay');
     let sheet = document.getElementById('mobileFolderSheet');
     if (!overlay) {
@@ -1027,28 +1204,33 @@ function showFolderBottomSheet(note) {
     if (!sheet) {
         sheet = document.createElement('div');
         sheet.id = 'mobileFolderSheet';
+        sheet.setAttribute('role', 'dialog');
+        sheet.setAttribute('aria-modal', 'true');
+        sheet.setAttribute('aria-labelledby', 'mobileFolderSheetTitle');
         document.body.appendChild(sheet);
     }
     const folders = getAllFolderNames();
     sheet.innerHTML = `
-        <div class="mobile-folder-sheet-title">העבר לתיקייה</div>
-        ${folders.map(f => `<div class="mobile-folder-item" data-folder="${escapeHTML(f)}">${escapeHTML(f)}</div>`).join('')}
+        <div class="mobile-folder-sheet-title" id="mobileFolderSheetTitle">העבר לתיקייה</div>
+        ${folders.map(f => `<div class="mobile-folder-item${f === note.folder ? ' is-current' : ''}" role="button" tabindex="0" data-folder="${escapeHTML(f)}"><span class="dot" style="background:${escapeHTML(folderColors[f] || 'var(--text-3)')}"></span>${escapeHTML(f)}</div>`).join('')}
     `;
+    sheet._trigger = triggerEl || null;
     sheet.querySelectorAll('.mobile-folder-item').forEach(item => {
-        item.onclick = () => {
-            const target = item.getAttribute('data-folder');
-            note.folder = target;
-            if (target === 'אשפה') { note.color = folderColors['אשפה'] || '#bdc3c7'; }
-            else if (folderColors[target]) { note.color = folderColors[target]; }
-            else { note.color = note.customColor || 'green'; }
-            updateNoteInStorage(note);
-            loadNotesWithoutFolderView();
+        const choose = () => {
             closeFolderBottomSheet();
+            moveNoteToFolder(note, item.getAttribute('data-folder'));
         };
+        item.onclick = choose;
+        item.onkeydown = (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); choose(); } };
     });
+    sheet.onkeydown = (e) => { if (e.key === 'Escape') { e.preventDefault(); closeFolderBottomSheet(); } };
     overlay.onclick = closeFolderBottomSheet;
     overlay.classList.add('active');
-    requestAnimationFrame(() => sheet.classList.add('active'));
+    requestAnimationFrame(() => {
+        sheet.classList.add('active');
+        const first = sheet.querySelector('.mobile-folder-item.is-current') || sheet.querySelector('.mobile-folder-item');
+        if (first) first.focus({ preventScroll: true });
+    });
 }
 
 function setupDatetimePlaceholders() {
@@ -1070,16 +1252,21 @@ function setupDatetimePlaceholders() {
 function closeFolderBottomSheet() {
     const sheet = document.getElementById('mobileFolderSheet');
     const overlay = document.getElementById('mobileFolderSheetOverlay');
-    if (sheet) sheet.classList.remove('active');
+    if (sheet) {
+        sheet.classList.remove('active');
+        if (sheet._trigger && document.contains(sheet._trigger)) sheet._trigger.focus({ preventScroll: true });
+        sheet._trigger = null;
+    }
     if (overlay) overlay.classList.remove('active');
 }
 
 function clearTrash() {
-    showConfirm('לרוקן את האשפה? כל הפתקים יימחקו לצמיתות.', () => {
+    showConfirm('כל הפתקים שבאשפה יימחקו לצמיתות.', () => {
         let notes = getNotes().filter(n => n.folder !== 'אשפה');
         localStorage.setItem('notes', JSON.stringify(notes));
         loadNotesWithoutFolderView();
-    });
+        showToast('האשפה רוקנה');
+    }, null, { title: 'לרוקן את האשפה?', confirmText: 'רוקן אשפה' });
 }
 
 // --- גיבוי: IndexedDB לשמירת תיקיית גיבוי ---
@@ -1234,7 +1421,7 @@ function setupDragAndResize(el) {
     }
 
     function onDragStart(e) {
-        if (e.target.tagName === 'BUTTON') return;
+        if (e.target.closest('button, .menu, [contenteditable="true"]')) return;
         e.preventDefault();
         isDragging = true;
         const coords = getCoords(e);
@@ -1356,15 +1543,15 @@ function updateNotifBtn() {
     const btn = document.getElementById('sidebarNotifBtn');
     if (!btn) return;
     if (!('Notification' in window) || !window.isSecureContext) {
-        btn.textContent = '🔕'; btn.title = 'התראות — דורשות HTTPS'; btn.style.opacity = '0.5';
+        btn.innerHTML = ICONS.bellOff; btn.title = 'התראות — דורשות HTTPS'; btn.setAttribute('aria-label', btn.title); btn.style.opacity = '0.5';
         return;
     }
     if (Notification.permission === 'granted') {
-        btn.textContent = '🔔'; btn.title = 'התראות פעילות'; btn.style.opacity = '0.45';
+        btn.innerHTML = ICONS.bell; btn.title = 'התראות פעילות'; btn.setAttribute('aria-label', btn.title); btn.style.opacity = '0.45';
     } else if (Notification.permission === 'denied') {
-        btn.textContent = '🔕'; btn.title = 'התראות חסומות — שנה בהגדרות'; btn.style.opacity = '0.5';
+        btn.innerHTML = ICONS.bellOff; btn.title = 'התראות חסומות — שנה בהגדרות'; btn.setAttribute('aria-label', btn.title); btn.style.opacity = '0.5';
     } else {
-        btn.textContent = '🔔'; btn.title = 'לחץ להפעלת התראות'; btn.style.opacity = '1';
+        btn.innerHTML = ICONS.bell; btn.title = 'לחץ להפעלת התראות'; btn.setAttribute('aria-label', btn.title); btn.style.opacity = '1';
     }
 }
 
@@ -1404,46 +1591,54 @@ function checkDueTimes() {
 
 function showCustomAlertModal(text) {
     if (document.getElementById('custom-alert-overlay')) return;
-    const modalOverlay = document.createElement('div');
-    modalOverlay.id = 'custom-alert-overlay';
-    modalOverlay.style.cssText = 'position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); display:flex; justify-content:center; align-items:center; z-index:20000;';
-    const modalContent = document.createElement('div');
-    modalContent.style.cssText = 'background:white; padding:30px; border-radius:12px; text-align:center; min-width:320px; box-shadow: 0 10px 25px rgba(0,0,0,0.2); animation: popIn 0.3s ease;';
-    if (document.body.classList.contains('dark-mode')) { modalContent.style.background = '#2d3748'; modalContent.style.color = 'white'; }
-    const icon = document.createElement('div');
-    icon.innerHTML = '⏰'; icon.style.fontSize = '3rem'; icon.style.marginBottom = '10px';
-    const title = document.createElement('h2');
-    title.innerText = 'הזמן עבר!'; title.style.marginBottom = '10px'; title.style.color = '#e53e3e';
-    const msg = document.createElement('p');
-    msg.innerText = `המשימה: "${text}"`; msg.style.fontSize = '1.1rem'; msg.style.marginBottom = '20px';
-    const okBtn = document.createElement('button');
-    okBtn.innerText = 'אישור';
-    okBtn.style.cssText = 'background:#4299e1; color:white; padding:10px 30px; border:none; border-radius:6px; cursor:pointer; font-size:1rem; transition: background 0.2s;';
-    okBtn.onclick = () => document.body.removeChild(modalOverlay);
-    modalContent.appendChild(icon); modalContent.appendChild(title); modalContent.appendChild(msg); modalContent.appendChild(okBtn);
-    modalOverlay.appendChild(modalContent); document.body.appendChild(modalOverlay);
-    const style = document.createElement('style');
-    style.innerHTML = `@keyframes popIn { from { transform: scale(0.8); opacity: 0; } to { transform: scale(1); opacity: 1; } }`;
-    document.head.appendChild(style);
+    const d = createDialog({
+        id: 'custom-alert-overlay',
+        title: 'הזמן עבר!',
+        icon: 'alarm',
+        tone: 'warning',
+        layer: 'alert'
+    });
+    const quote = document.createElement('div');
+    quote.className = 'dialog-quote';
+    quote.textContent = text;
+    d.body.appendChild(quote);
+    d.addButton('הבנתי', 'primary', () => d.close()).focus();
 }
 
 function openDateModal(currentTime, callback) {
-    const modalOverlay = document.createElement('div');
-    modalOverlay.style.cssText = 'position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); display:flex; justify-content:center; align-items:center; z-index:10000;';
-    const modalContent = document.createElement('div');
-    modalContent.style.cssText = 'background:white; padding:20px; border-radius:8px; text-align:center; min-width:300px; box-shadow: 0 4px 6px rgba(0,0,0,0.1);';
-    if (document.body.classList.contains('dark-mode')) { modalContent.style.background = '#2d3748'; modalContent.style.color = 'white'; }
-    const title = document.createElement('h3'); title.innerText = 'בחר זמן לביצוע'; title.style.marginBottom = '15px';
-    const input = document.createElement('input'); input.type = 'datetime-local'; input.style.cssText = 'width:100%; padding:10px; margin-bottom:20px; border-radius:5px; border:1px solid #ccc; font-size:1rem;';
-    if (currentTime) { try { input.value = new Date(currentTime).toISOString().slice(0, 16); } catch(e){} }
-    const btnContainer = document.createElement('div'); btnContainer.style.display = 'flex'; btnContainer.style.justifyContent = 'space-between'; btnContainer.style.gap = '10px';
-    const saveBtn = document.createElement('button'); saveBtn.innerText = 'שמור'; saveBtn.style.cssText = 'background:#48bb78; color:white; padding:10px 20px; border:none; border-radius:5px; cursor:pointer; flex:1;';
-    const cancelBtn = document.createElement('button'); cancelBtn.innerText = 'ביטול'; cancelBtn.style.cssText = 'background:#e53e3e; color:white; padding:10px 20px; border:none; border-radius:5px; cursor:pointer; flex:1;';
-    saveBtn.onclick = () => { callback(input.value); document.body.removeChild(modalOverlay); };
-    cancelBtn.onclick = () => { document.body.removeChild(modalOverlay); };
-    btnContainer.appendChild(saveBtn); btnContainer.appendChild(cancelBtn);
-    modalContent.appendChild(title); modalContent.appendChild(input); modalContent.appendChild(btnContainer);
-    modalOverlay.appendChild(modalContent); document.body.appendChild(modalOverlay);
+    const d = createDialog({ title: 'מתי להזכיר?', icon: 'clock', message: 'בחר תאריך ושעה, או אחת מהאפשרויות המהירות.' });
+    const inputId = 'date-modal-input-' + Date.now();
+    d.body.innerHTML = `
+        <div class="quick-times" role="group" aria-label="בחירה מהירה"></div>
+        <label class="field-label" for="${inputId}">תאריך ושעה</label>
+        <input type="datetime-local" id="${inputId}">
+    `;
+    const input = d.body.querySelector('input');
+    if (currentTime) input.value = toLocalInputValue(currentTime);
+    const quick = d.body.querySelector('.quick-times');
+    const at = (fn) => { const t = new Date(); fn(t); return t; };
+    [
+        ['בעוד שעה', at(t => { t.setHours(t.getHours() + 1); })],
+        ['הערב 20:00', at(t => { t.setHours(20, 0, 0, 0); })],
+        ['מחר 09:00', at(t => { t.setDate(t.getDate() + 1); t.setHours(9, 0, 0, 0); })],
+        ['בעוד שבוע', at(t => { t.setDate(t.getDate() + 7); t.setHours(9, 0, 0, 0); })]
+    ].forEach(([label, date]) => {
+        if (date.getTime() <= Date.now()) return;
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'chip-btn';
+        b.textContent = label;
+        b.onclick = () => {
+            input.value = toLocalInputValue(date);
+            quick.querySelectorAll('.chip-btn').forEach(x => x.setAttribute('aria-pressed', 'false'));
+            b.setAttribute('aria-pressed', 'true');
+        };
+        b.setAttribute('aria-pressed', 'false');
+        quick.appendChild(b);
+    });
+    d.addButton('ביטול', 'secondary', () => d.close());
+    d.addButton('שמירה', 'primary', () => { callback(input.value); d.close(); });
+    setTimeout(() => (quick.querySelector('button') || input).focus(), 30);
 }
 
 function toggleBoardView() {
@@ -1462,7 +1657,7 @@ function toggleBoardView() {
             isFolderViewActive = true;
         }
         const badge = document.getElementById('boardFolderBadge');
-        if (badge) { badge.textContent = '📁 ' + selectedFolder; badge.style.display = 'inline-block'; }
+        if (badge) { badge.textContent = selectedFolder; badge.style.display = 'inline-flex'; }
         loadNotesWithoutFolderView();
     } else {
         if(main) main.style.display = 'block';
@@ -1485,18 +1680,20 @@ function setupEventListeners() {
     document.getElementById('create-folder-btn').onclick = createFolder;
     document.getElementById('guideIcon').onclick = showGuideModal;
     
-    // חיבור נכון לתפריט הצד
+    // תפריט הצד: מעבר עכבר פותח במחשב, לחיצה פותחת בכל מכשיר, Escape או לחיצה ברקע סוגרים
     const toggleBtn = document.getElementById('sidebarToggle');
     const sidebar = document.getElementById('foldersSidebar');
     if(toggleBtn && sidebar) {
-        toggleBtn.addEventListener('mouseenter', () => sidebar.classList.add('active'));
-        toggleBtn.addEventListener('click', () => sidebar.classList.add('active'));
-        sidebar.addEventListener('mouseleave', () => sidebar.classList.remove('active'));
+        toggleBtn.addEventListener('mouseenter', () => { if (window.matchMedia('(hover: hover)').matches) setSidebarOpen(true); });
+        toggleBtn.addEventListener('click', (e) => setSidebarOpen(true, { focus: e.detail === 0 }));
+        sidebar.addEventListener('mouseleave', () => { if (window.matchMedia('(hover: hover)').matches) setSidebarOpen(false); });
     }
+    const scrim = document.getElementById('sidebarScrim');
+    if (scrim) scrim.addEventListener('click', () => setSidebarOpen(false));
 
     const closeSidebarBtn = document.getElementById('closeSidebarBtn');
     if (closeSidebarBtn && sidebar) {
-        closeSidebarBtn.onclick = () => sidebar.classList.remove('active');
+        closeSidebarBtn.onclick = () => setSidebarOpen(false, { returnFocus: true });
     }
 
     // כפתורי כלים בסרגל צד (מובייל)
@@ -1509,14 +1706,6 @@ function setupEventListeners() {
     const sidebarNotifBtn = document.getElementById('sidebarNotifBtn');
     if (sidebarNotifBtn) sidebarNotifBtn.onclick = requestNotificationPermission;
 
-    document.addEventListener('touchstart', (e) => {
-        if (sidebar && sidebar.classList.contains('active') &&
-            !sidebar.contains(e.target) &&
-            toggleBtn && !toggleBtn.contains(e.target)) {
-            sidebar.classList.remove('active');
-        }
-    }, { passive: true });
-
     const oldCloseBtn = document.getElementById('closeGuideModal');
     if(oldCloseBtn) oldCloseBtn.onclick = handleGuideClose;
 
@@ -1526,16 +1715,32 @@ function setupEventListeners() {
 
     document.getElementById('boardToggle').onclick = toggleBoardView;
     document.getElementById('backToListBtn').onclick = () => { if(isBoardViewActive) toggleBoardView(); };
-    
+
     const addNoteBtn = document.getElementById('addNoteBtn');
-    if(addNoteBtn) addNoteBtn.onclick = () => {
-        const modal = document.getElementById('newNoteModal');
-        modal.style.display = 'flex';
-        setTimeout(() => trapFocus(modal, addNoteBtn), 50);
-    };
-    
+    if(addNoteBtn) addNoteBtn.onclick = openNewNoteModal;
+    const newNoteModal = document.getElementById('newNoteModal');
+    if (newNoteModal) {
+        newNoteModal.addEventListener('keydown', (e) => { if (e.key === 'Escape') { e.preventDefault(); closeNewNoteModal(); } });
+        newNoteModal.addEventListener('mousedown', (e) => { if (e.target === newNoteModal) closeNewNoteModal(); });
+    }
+
+    // תיבת הכתיבה: גדלה עם הטקסט, Ctrl/Cmd+Enter שומר
+    const noteText = document.getElementById('note-text');
+    if (noteText) {
+        noteText.addEventListener('input', () => autosizeTextarea(noteText));
+        noteText.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); createNote(false); }
+        });
+    }
+    const newNoteText = document.getElementById('new-note-text');
+    if (newNoteText) {
+        newNoteText.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); createNote(true); }
+        });
+    }
+
     document.getElementById('confirm-new-note-btn').onclick = () => createNote(true);
-    document.getElementById('cancel-new-note-btn').onclick = () => { document.getElementById('newNoteModal').style.display = 'none'; };
+    document.getElementById('cancel-new-note-btn').onclick = closeNewNoteModal;
     document.getElementById('backBtn').onclick = showMainContent;
 
     const restoreBtn = document.getElementById('restore-notes-btn');
@@ -1558,11 +1763,24 @@ function setupEventListeners() {
     
     document.querySelectorAll('#createNoteSection .color-circle:not(.note-color-picker), #newNoteModal .color-circle:not(.note-color-picker)').forEach(c => {
         c.onclick = function() {
-            document.querySelectorAll('.color-circle').forEach(el => el.classList.remove('selected'));
-            this.classList.add('selected');
             selectedColor = this.getAttribute('data-color');
             localStorage.setItem('selectedColor', selectedColor);
+            syncColorRadios();
         };
+    });
+    // מקלדת: Enter/רווח בוחרים, חצים עוברים בין הצבעים
+    document.querySelectorAll('.color-options').forEach(group => {
+        group.addEventListener('keydown', (e) => {
+            const circle = e.target.closest('.color-circle');
+            if (!circle) return;
+            if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); circle.click(); return; }
+            const circles = [...group.querySelectorAll('.color-circle')];
+            const i = circles.indexOf(circle);
+            let next = null;
+            if (e.key === 'ArrowLeft') next = circles[i + 1];
+            if (e.key === 'ArrowRight') next = circles[i - 1];
+            if (next) { e.preventDefault(); next.focus(); if (next.getAttribute('role') === 'radio') next.click(); }
+        });
     });
 
     const newCpBtn = document.getElementById('new-note-color-picker-btn');
@@ -1572,20 +1790,87 @@ function setupEventListeners() {
         newCpInp.oninput = (e) => {
             selectedColor = e.target.value;
             localStorage.setItem('selectedColor', selectedColor);
-            document.querySelectorAll('.color-circle').forEach(c => c.classList.remove('selected'));
+            syncColorRadios();
         };
     }
+    if (cpInp) cpInp.addEventListener('input', syncColorRadios);
 
     document.addEventListener('click', function(e) {
-        if (!e.target.closest('.menu-btn') && !e.target.closest('.menu') && 
-            !e.target.closest('.note-toolbar') && !e.target.closest('.edit-btn') && 
+        if (!e.target.closest('.menu-btn') && !e.target.closest('.menu') &&
+            !e.target.closest('.note-toolbar') && !e.target.closest('.edit-btn') &&
             !e.target.closest('.color-circle')) {
-            document.querySelectorAll('.menu').forEach(m => m.style.display = 'none');
+            closeAllNoteMenus();
             document.querySelectorAll('.note-toolbar').forEach(t => t.style.display = 'none');
             document.querySelectorAll('.note-content').forEach(c => c.contentEditable = 'false');
+            document.querySelectorAll('.edit-btn').forEach(b => b.setAttribute('aria-pressed', 'false'));
             document.querySelectorAll('.note').forEach(n => n.style.zIndex = '');
         }
     });
+
+    // קיצורי מקלדת גלובליים
+    document.addEventListener('keydown', (e) => {
+        if (e.defaultPrevented) return;
+        const t = e.target;
+        const typing = t && t.closest && t.closest('input, textarea, select, [contenteditable="true"]');
+        if (e.key === 'Escape') {
+            if (topmostDialog()) return;
+            const openMenu = [...document.querySelectorAll('.menu')].find(m => m.style.display === 'block');
+            if (openMenu) { closeAllNoteMenus(); const b = openMenu.parentElement.querySelector('.menu-btn'); if (b) b.focus(); return; }
+            const sheet = document.getElementById('mobileFolderSheet');
+            if (sheet && sheet.classList.contains('active')) { closeFolderBottomSheet(); return; }
+            if (sidebar && sidebar.classList.contains('active') && !isSidebarPinned()) { setSidebarOpen(false, { returnFocus: true }); return; }
+            if (t && (t.id === 'search-input' || t.id === 'board-search-input') && t.value) { t.value = ''; searchNotes(); return; }
+            return;
+        }
+        if (typing || e.ctrlKey || e.metaKey || e.altKey) return;
+        if (document.querySelector('.dialog-overlay, .guide-modal[style*="flex"], .new-note-modal[style*="flex"]')) return;
+        if (e.key === '/' || e.code === 'Slash') {
+            e.preventDefault();
+            const field = isBoardViewActive ? document.getElementById('board-search-input') : document.getElementById('search-input');
+            if (field) { field.focus(); field.select(); }
+        } else if (e.code === 'KeyN') {
+            e.preventDefault();
+            if (isBoardViewActive) { openNewNoteModal(); return; }
+            if (isFolderViewActive) showMainContent();
+            const field = document.getElementById('note-text');
+            if (field) { field.focus(); field.scrollIntoView({ block: 'center', behavior: 'smooth' }); }
+        }
+    });
+
+    // מעבר בין מסך רחב לצר: תפריט הצד חוזר למצב סגור
+    window.matchMedia('(min-width: 1100px)').addEventListener('change', () => setSidebarOpen(false));
+}
+
+function syncColorRadios() {
+    const isCustom = !validColors.includes(selectedColor);
+    document.querySelectorAll('.color-circle').forEach(c => {
+        if (c.classList.contains('note-color-picker')) {
+            c.classList.toggle('selected', isCustom);
+            c.style.background = isCustom ? selectedColor : '';
+            return;
+        }
+        const on = c.getAttribute('data-color') === selectedColor;
+        c.classList.toggle('selected', on);
+        c.setAttribute('aria-checked', on ? 'true' : 'false');
+    });
+}
+
+function openNewNoteModal() {
+    const modal = document.getElementById('newNoteModal');
+    const trigger = document.activeElement;
+    modal.style.display = 'flex';
+    setTimeout(() => {
+        modal._releaseFocus = trapFocus(modal, trigger && trigger !== document.body ? trigger : document.getElementById('addNoteBtn'));
+        const field = document.getElementById('new-note-text');
+        if (field) field.focus();
+    }, 50);
+}
+
+function closeNewNoteModal() {
+    const modal = document.getElementById('newNoteModal');
+    if (!modal || modal.style.display === 'none') return;
+    modal.style.display = 'none';
+    if (modal._releaseFocus) { modal._releaseFocus(); modal._releaseFocus = null; }
 }
 
 // --- 5. הפעלה סופית ---
@@ -1608,6 +1893,11 @@ document.addEventListener('DOMContentLoaded', function() {
         });
         if (changed) localStorage.setItem('notes', JSON.stringify(notes));
     })();
+
+    // אנימציית כניסה רק בטעינה הראשונה, לא בכל רענון של הרשימה
+    document.body.classList.add('is-booting');
+    setTimeout(() => document.body.classList.remove('is-booting'), 900);
+    syncColorRadios();
 
     createSettingsFloatingButton();
     updateTopIcons();
