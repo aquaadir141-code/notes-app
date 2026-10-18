@@ -290,7 +290,50 @@ const ICONS = {
 // --- 5. הגדרת פונקציות ליבה ---
 
 function getNotes() { return tryParseJSON('notes', []); }
-function getFolders() { return tryParseJSON('folders', []); }
+function getFolders() {
+    const folders = tryParseJSON('folders', []);
+    return Array.isArray(folders) ? folders.filter(f => typeof f === 'string') : [];
+}
+
+// שם תיקייה מתוך ערך שמור: מחרוזת, או אובייקט מגיבוי בפורמט אחר ({ name: ... })
+function folderNameOf(value) {
+    if (typeof value === 'string') return value.trim();
+    if (value && typeof value === 'object') {
+        for (const key of ['name', 'title', 'label', 'folder']) {
+            if (typeof value[key] === 'string') return value[key].trim();
+        }
+    }
+    return '';
+}
+
+// מתקן נתונים פגומים (למשל תיקיות "[object Object]" אחרי שחזור גיבוי) בלי לאבד פתקים
+function repairStoredData() {
+    const rawFolders = tryParseJSON('folders', []);
+    const folders = [];
+    (Array.isArray(rawFolders) ? rawFolders : []).forEach(f => {
+        const name = folderNameOf(f);
+        if (name && !fixedFolders.includes(name) && !folders.includes(name)) folders.push(name);
+    });
+
+    const notes = tryParseJSON('notes', []);
+    let notesChanged = false;
+    if (Array.isArray(notes)) {
+        notes.forEach(n => {
+            if (!n || typeof n !== 'object') return;
+            const name = folderNameOf(n.folder) || 'תיקייה כללית';
+            if (name !== n.folder) { n.folder = name; notesChanged = true; }
+            // פתק ששייך לתיקייה שלא קיימת ברשימה היה נעלם מהתצוגה
+            if (!fixedFolders.includes(name) && !folders.includes(name)) folders.push(name);
+        });
+    }
+
+    const colorsChanged = Object.keys(folderColors).some(k => k === '[object Object]');
+    delete folderColors['[object Object]'];
+
+    if (JSON.stringify(folders) !== JSON.stringify(rawFolders)) localStorage.setItem('folders', JSON.stringify(folders));
+    if (notesChanged) localStorage.setItem('notes', JSON.stringify(notes));
+    if (colorsChanged) localStorage.setItem('folderColors', JSON.stringify(folderColors));
+}
 function getAllFolderNames() { return [...fixedFolders, ...getFolders()]; }
 
 function updateNoteInStorage(updatedNote) {
@@ -1327,7 +1370,7 @@ async function writeBlobToDir(dirHandle, filename) {
 }
 
 async function backupNotes() {
-    const today = new Date().toISOString().slice(0, 10);
+    const today = localDateKey();
     const filename = `notes_backup_${today}.json`;
     const blob = buildBackupBlob();
 
@@ -1368,20 +1411,39 @@ async function backupNotes() {
     }
 }
 
+function localDateKey(d = new Date()) {
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+// גיבוי יומי ב-16:00. אם האפליקציה לא הייתה פתוחה בזמן, הגיבוי נעשה בפתיחה הבאה באותו יום.
+// דפדפן לא יכול לכתוב לקובץ בלי אישור: אם התיקייה שנבחרה מאושרת הגיבוי שקט, אחרת מוצגת בקשה בלחיצה אחת.
+let _autoBackupPromptedFor = null;
 async function autoBackupIfTime() {
     const now = new Date();
-    if (now.getHours() !== 16 || now.getMinutes() !== 0) return;
-    const today = now.toISOString().slice(0, 10);
+    if (now.getHours() < 16) return;
+    const today = localDateKey(now);
     if (localStorage.getItem('lastAutoBackup') === today) return;
+    if (_autoBackupPromptedFor === today) return;
+    _autoBackupPromptedFor = today;
+
     const dirHandle = await getBackupDirHandle();
-    if (!dirHandle) return;
-    const perm = await dirHandle.queryPermission({ mode: 'readwrite' });
-    if (perm !== 'granted') return;
-    try {
-        await writeBlobToDir(dirHandle, `notes_backup_${today}.json`);
-        localStorage.setItem('lastAutoBackup', today);
-        showAlert('גיבוי אוטומטי נשמר! 💾');
-    } catch (e) {}
+    if (dirHandle) {
+        try {
+            if (await dirHandle.queryPermission({ mode: 'readwrite' }) === 'granted') {
+                await writeBlobToDir(dirHandle, `notes_backup_${today}.json`);
+                localStorage.setItem('lastAutoBackup', today);
+                showToast('הגיבוי היומי נשמר 💾', 4000);
+                return;
+            }
+        } catch (e) {}
+    }
+    showToast('הגיע הזמן לגיבוי היומי', 20000, {
+        label: 'גבה עכשיו',
+        onClick: async () => {
+            await backupNotes();
+            localStorage.setItem('lastAutoBackup', today);
+        }
+    });
 }
 
 function restoreNotes(event) {
@@ -1397,6 +1459,7 @@ function restoreNotes(event) {
             if (data.notePositions) localStorage.setItem('notePositions', JSON.stringify(data.notePositions));
             folderColors = data.folderColors || {};
             notePositions = data.notePositions || {};
+            repairStoredData();
             loadFolders();
             loadNotesWithoutFolderView();
             showAlert('שוחזר בהצלחה! 🎉');
@@ -1899,6 +1962,7 @@ document.addEventListener('DOMContentLoaded', function() {
     setTimeout(() => document.body.classList.remove('is-booting'), 900);
     syncColorRadios();
 
+    repairStoredData();
     createSettingsFloatingButton();
     updateTopIcons();
     loadFolders();
