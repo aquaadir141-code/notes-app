@@ -1858,15 +1858,27 @@ function setupEventListeners() {
     }
     if (cpInp) cpInp.addEventListener('input', syncColorRadios);
 
+    // לחיצה שהתחילה בתוך פתק בעריכה (הזזת סמן, סימון טקסט בגרירה) לא סוגרת את העריכה
+    const isInEditingNote = (target) => {
+        const note = target && target.closest && target.closest('.note');
+        return !!(note && note.querySelector('.note-content[contenteditable="true"]'));
+    };
+    let pressStartedInEditor = false;
+    document.addEventListener('pointerdown', (e) => { pressStartedInEditor = isInEditingNote(e.target); }, true);
+
     document.addEventListener('click', function(e) {
+        const startedInEditor = pressStartedInEditor;
+        pressStartedInEditor = false;
+        const keepEditing = startedInEditor || isInEditingNote(e.target);
         if (!e.target.closest('.menu-btn') && !e.target.closest('.menu') &&
             !e.target.closest('.note-toolbar') && !e.target.closest('.edit-btn') &&
             !e.target.closest('.color-circle')) {
             closeAllNoteMenus();
+            document.querySelectorAll('.note').forEach(n => n.style.zIndex = '');
+            if (keepEditing) return;
             document.querySelectorAll('.note-toolbar').forEach(t => t.style.display = 'none');
             document.querySelectorAll('.note-content').forEach(c => c.contentEditable = 'false');
             document.querySelectorAll('.edit-btn').forEach(b => b.setAttribute('aria-pressed', 'false'));
-            document.querySelectorAll('.note').forEach(n => n.style.zIndex = '');
         }
     });
 
