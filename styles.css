@@ -2075,10 +2075,11 @@ body.dark-mode .toast-action {
 
 .note.board-note {
     position: absolute;
-    width: 220px;
-    height: 220px;
-    min-width: 150px;
-    min-height: 120px;
+    width: 250px;
+    height: 250px;
+    min-width: 200px;
+    min-height: 180px;
+    container-type: inline-size;
     padding: 0;
     gap: 0;
     z-index: 10;
@@ -2118,8 +2119,38 @@ body.dark-mode .toast-action {
     flex-wrap: nowrap;
     overflow: hidden;
 }
+/* בלוח: שורת הכפתורים נשארת בתוך הכרטיס גם כשהוא צר */
+.note.board-note .note-actions {
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    min-width: 0;
+}
+@container (max-width: 239px) {
+    .note.board-note .note-header button {
+        width: 28px;
+        height: 28px;
+    }
+}
+/* סרגל העיצוב בעריכה: רצועה בתוך הכרטיס במקום חלון צף שבורח החוצה */
 .note.board-note .note-toolbar {
-    position: absolute;
+    position: static;
+    transform: none;
+    flex-shrink: 0;
+    flex-wrap: wrap;
+    justify-content: center;
+    white-space: normal;
+    padding: 4px;
+    border: 0;
+    border-bottom: 1px solid color-mix(in srgb, var(--tint) 20%, var(--border));
+    border-radius: 0;
+    box-shadow: none;
+    background: color-mix(in srgb, var(--tint) 6%, var(--surface));
+    animation: none;
+}
+.note.board-note .note-toolbar button,
+.note.board-note .note-text-color-picker {
+    width: 28px;
+    height: 28px;
 }
 .note.board-note .resize-handle-bottom-right {
     position: absolute;
@@ -2128,7 +2159,7 @@ body.dark-mode .toast-action {
     width: 18px;
     height: 18px;
     cursor: se-resize;
-    z-index: 20;
+    z-index: 5;
     background:
         linear-gradient(135deg, transparent 55%, color-mix(in srgb, var(--text) 25%, transparent) 55%, color-mix(in srgb, var(--text) 25%, transparent) 62%, transparent 62%),
         linear-gradient(135deg, transparent 75%, color-mix(in srgb, var(--text) 25%, transparent) 75%, color-mix(in srgb, var(--text) 25%, transparent) 82%, transparent 82%);
