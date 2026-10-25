@@ -233,6 +233,8 @@ let selectedColor = localStorage.getItem('selectedColor') || 'green';
 let selectedFolder = 'תיקייה כללית';
 let isFolderViewActive = false;
 let isBoardViewActive = false;
+// גודל מינימלי לכרטיס בלוח — מתחת לזה שורת הכפתורים לא נכנסת
+const BOARD_MIN_W = 200, BOARD_MIN_H = 180;
 let notePositions = tryParseJSON('notePositions', {});
 let isLoading = false;
 let folderColors = tryParseJSON('folderColors', {});
@@ -696,8 +698,8 @@ function loadNotesWithoutFolderView() {
             let pos = notePositions[note.id] || { left: 50, top: 50, width: 250, height: 250 };
             el.style.left = pos.left + 'px';
             el.style.top = pos.top + 'px';
-            el.style.width = pos.width + 'px';
-            el.style.height = pos.height + 'px';
+            el.style.width = Math.max(BOARD_MIN_W, pos.width) + 'px';
+            el.style.height = Math.max(BOARD_MIN_H, pos.height) + 'px';
             if(board) board.appendChild(el);
             setupDragAndResize(el);
         } else {
@@ -1553,16 +1555,14 @@ function setupDragAndResize(el) {
         handle.onmousedown = (e) => {
             e.stopPropagation();
             e.preventDefault();
-            const container = el.parentElement;
-            const noteLeft  = el.offsetLeft;
+            const startW    = el.offsetWidth;
             const startH    = el.offsetHeight;
+            const startX    = e.clientX;
             const startY    = e.clientY;
             el.classList.add('is-resizing');
             const onMove = (ev) => {
-                const cRect = container.getBoundingClientRect();
-                const mouseInContainer = ev.clientX - cRect.left + window.scrollX;
-                const newW = Math.max(150, mouseInContainer - noteLeft);
-                const newH = Math.max(120, startH + (ev.clientY - startY));
+                const newW = Math.max(BOARD_MIN_W, startW + (ev.clientX - startX));
+                const newH = Math.max(BOARD_MIN_H, startH + (ev.clientY - startY));
                 el.style.width  = newW + 'px';
                 el.style.height = newH + 'px';
             };
