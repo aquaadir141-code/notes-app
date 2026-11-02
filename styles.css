@@ -2125,10 +2125,24 @@ body.dark-mode .toast-action {
     justify-content: flex-end;
     min-width: 0;
 }
+/* תגיות תאריך בתחתית: מתקצרות במקום לגלוש מהכרטיס */
+.note.board-note .meta-chip {
+    min-width: 0;
+    flex-shrink: 0;
+}
+.note.board-note .meta-chip.is-plain {
+    flex-shrink: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
 @container (max-width: 239px) {
     .note.board-note .note-header button {
         width: 28px;
         height: 28px;
+    }
+    /* בכרטיס צר תגית התזכורת חשובה יותר מ"נוצר לפני" */
+    .note.board-note .meta-chip.is-plain:not(:only-child) {
+        display: none;
     }
 }
 /* סרגל העיצוב בעריכה: רצועה בתוך הכרטיס במקום חלון צף שבורח החוצה */
