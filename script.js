@@ -832,14 +832,11 @@ function deleteFolder(folder) {
 let _justAddedNoteId = null;
 
 function createNote(fromModal = false) {
-    let text, due;
-    if (fromModal) {
-        text = document.getElementById('new-note-text').value;
-        due = document.getElementById('new-note-due').value;
-    } else {
-        text = document.getElementById('note-text').value;
-        due = document.getElementById('note-due').value;
-    }
+    let text, due, repeat;
+    const dueInput = document.getElementById(fromModal ? 'new-note-due' : 'note-due');
+    text = document.getElementById(fromModal ? 'new-note-text' : 'note-text').value;
+    due = dueInput ? dueInput.value : '';
+    repeat = due && dueInput && REPEAT_LABELS[dueInput.dataset.repeat] ? dueInput.dataset.repeat : '';
     if (!text || !text.trim()) {
         showToast('נא לכתוב משהו בפתק');
         const field = document.getElementById(fromModal ? 'new-note-text' : 'note-text');
@@ -860,6 +857,7 @@ function createNote(fromModal = false) {
         pinned: false,
         left: 50, top: 50, width: 250, height: 250
     };
+    if (repeat) note.repeat = repeat;
     const notes = getNotes();
     if (isBoardViewActive) {
         // בלוח: הפתק החדש נכנס למשבצת פנויה בחלק של הלוח שרואים עכשיו, בלי לעלות על פתק אחר
@@ -1680,6 +1678,7 @@ function clearForm() {
     if(document.getElementById('note-due')) document.getElementById('note-due').value = '';
     if(document.getElementById('new-note-text')) document.getElementById('new-note-text').value = '';
     if(document.getElementById('new-note-due')) document.getElementById('new-note-due').value = '';
+    document.querySelectorAll('.due-picker').forEach(p => setDuePickerValue(p, '', ''));
     const t = document.getElementById('note-text');
     if (t) t.style.height = '';
 }
@@ -2547,6 +2546,51 @@ function openDateModal(currentTime, callback, currentRepeat) {
     setTimeout(() => (quick.querySelector('button') || input).focus(), 30);
 }
 
+// בורר התזכורת ביצירת פתק: אותו חלון "מתי להזכיר?" של עריכת פתק קיים
+function setDuePickerValue(picker, value, repeat) {
+    const input = document.getElementById(picker.dataset.for);
+    if (!input) return;
+    input.value = value || '';
+    input.dataset.repeat = value && REPEAT_LABELS[repeat] ? repeat : '';
+    const btn = picker.querySelector('.due-picker-btn');
+    const label = picker.querySelector('.due-picker-text');
+    const clear = picker.querySelector('.due-picker-clear');
+    if (!btn) return;
+    const has = !!input.value;
+    label.textContent = has
+        ? formatDue(input.value) + (input.dataset.repeat ? ' · ' + REPEAT_LABELS[input.dataset.repeat] : '')
+        : 'הוסף תזכורת';
+    btn.classList.toggle('has-value', has);
+    clear.hidden = !has;
+}
+
+function setupDuePickers() {
+    document.querySelectorAll('.due-picker').forEach(picker => {
+        if (picker.querySelector('.due-picker-btn')) return;
+        const input = document.getElementById(picker.dataset.for);
+        if (!input) return;
+        const labelId = picker.dataset.for + '-label';
+        picker.innerHTML = `
+            <button type="button" class="due-picker-btn" aria-labelledby="${labelId} ${picker.dataset.for}-text" aria-haspopup="dialog">
+                ${ICONS.alarm}<span class="due-picker-text" id="${picker.dataset.for}-text"></span>
+            </button>
+            <button type="button" class="due-picker-clear" aria-label="הסר תזכורת" title="הסר תזכורת" hidden>${ICONS.x}</button>
+        `;
+        const btn = picker.querySelector('.due-picker-btn');
+        btn.onclick = () => {
+            openDateModal(input.value, (value, repeat) => {
+                setDuePickerValue(picker, value, repeat);
+                btn.focus({ preventScroll: true });
+            }, input.dataset.repeat);
+        };
+        picker.querySelector('.due-picker-clear').onclick = () => {
+            setDuePickerValue(picker, '', '');
+            btn.focus({ preventScroll: true });
+        };
+        setDuePickerValue(picker, input.value, input.dataset.repeat);
+    });
+}
+
 function toggleBoardView() {
     isBoardViewActive = !isBoardViewActive;
     const main = document.getElementById('mainContent');
@@ -2656,6 +2700,7 @@ function setupEventListeners() {
     document.getElementById('boardToggle').onclick = toggleBoardView;
     document.getElementById('backToListBtn').onclick = () => { if(isBoardViewActive) toggleBoardView(); };
 
+    setupDuePickers();
     const addNoteBtn = document.getElementById('addNoteBtn');
     if(addNoteBtn) addNoteBtn.onclick = openNewNoteModal;
     const newNoteModal = document.getElementById('newNoteModal');
