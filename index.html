@@ -145,8 +145,9 @@
                 <textarea id="note-text" placeholder="מה צריך לעשות?" rows="3"></textarea>
                 <div class="composer-row">
                 <div class="composer-field">
-                <label for="note-due" class="field-label">תזכורת (לא חובה)</label>
-                <input type="datetime-local" id="note-due">
+                <span class="field-label" id="note-due-label">תזכורת (לא חובה)</span>
+                <input type="hidden" id="note-due">
+                <div class="due-picker" data-for="note-due"></div>
                 </div>
                 <div class="color-options" role="radiogroup" aria-label="צבע הפתק">
                     <div class="color-circle pink" data-color="pink" role="radio" aria-checked="false" aria-label="ורוד" tabindex="0"></div>
@@ -248,8 +249,9 @@
             <h2 id="newNoteModalTitle">הוסף פתק חדש</h2>
             <label for="new-note-text" class="sr-only">תוכן הפתק</label>
             <textarea id="new-note-text" placeholder="מה צריך לעשות?"></textarea>
-            <label for="new-note-due" class="field-label">תזכורת (לא חובה)</label>
-            <input type="datetime-local" id="new-note-due">
+            <span class="field-label" id="new-note-due-label">תזכורת (לא חובה)</span>
+            <input type="hidden" id="new-note-due">
+            <div class="due-picker" data-for="new-note-due"></div>
             <div class="color-options" role="radiogroup" aria-label="צבע הפתק">
                 <div class="color-circle pink" data-color="pink" role="radio" aria-checked="false" aria-label="ורוד" tabindex="0"></div>
                 <div class="color-circle yellow" data-color="yellow" role="radio" aria-checked="false" aria-label="צהוב" tabindex="0"></div>

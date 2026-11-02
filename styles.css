@@ -621,6 +621,60 @@ h1 {
     left: 0;
 }
 
+/* בורר תזכורת ביצירת פתק (נבנה ב-script.js, פותח את חלון "מתי להזכיר?") */
+.due-picker {
+    display: flex;
+    align-items: stretch;
+    gap: 6px;
+}
+.due-picker-btn {
+    flex: 1 1 auto;
+    min-width: 0;
+    min-height: 46px;
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 14px;
+    font: inherit;
+    font-size: 16px;
+    color: var(--text-3);
+    background: var(--surface-2);
+    border: 1px solid transparent;
+    border-radius: var(--radius-md);
+    cursor: pointer;
+    text-align: start;
+    transition: border-color 160ms ease, background-color 160ms ease, color 160ms ease;
+}
+.due-picker-btn svg { flex: none; width: 18px; height: 18px; }
+.due-picker-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.due-picker-btn:hover { border-color: var(--border); }
+.due-picker-btn:focus-visible {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 16%, transparent);
+}
+.due-picker-btn.has-value {
+    color: var(--accent);
+    font-weight: 600;
+    background: color-mix(in srgb, var(--accent) 10%, var(--surface-2));
+}
+.due-picker-clear {
+    flex: none;
+    width: 46px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-2);
+    background: var(--surface-2);
+    border: 1px solid transparent;
+    border-radius: var(--radius-md);
+    cursor: pointer;
+}
+.due-picker-clear[hidden] { display: none; }
+.due-picker-clear:hover { color: var(--text); border-color: var(--border); }
+.due-picker-clear:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.new-note-modal-content .due-picker { margin-bottom: 12px; }
+
 /* תווית לשדה תאריך במובייל (נוצרת ב-script.js) */
 .datetime-wrapper {
     width: 100%;
