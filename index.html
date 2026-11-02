@@ -89,6 +89,10 @@
                     <button class="sidebar-tool-btn" id="sidebarSoundBtn" title="בחירת צליל" aria-label="בחירת צליל"></button>
                     <button class="sidebar-tool-btn" id="sidebarNotifBtn" title="הפעל התראות" aria-label="הפעל התראות"></button>
                 </div>
+                <button class="auto-backup-btn" id="auto-backups-btn" aria-label="גיבויים אוטומטיים ושחזור">
+                    <svg aria-hidden="true" focusable="false" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><polyline points="9 12 11 14 15 10"/></svg>
+                    <span id="auto-backup-status">גיבוי אוטומטי פעיל</span>
+                </button>
                 <div class="sidebar-backup-row">
                 <button class="backup-btn" id="backup-notes-btn" aria-label="שמור פתקים לקובץ">
                     <svg aria-hidden="true" focusable="false" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
@@ -117,6 +121,24 @@
                 <svg class="search-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><line x1="20" y1="20" x2="16.5" y2="16.5"/></svg>
                 <input type="search" id="search-input" placeholder="חיפוש בפתקים" enterkeyhint="search" autocomplete="off">
                 <kbd aria-hidden="true">/</kbd>
+            </div>
+            <div class="view-controls">
+                <div class="filter-chips" role="group" aria-label="סינון פתקים">
+                    <button type="button" class="chip-btn" data-filter="all" aria-pressed="true">הכל</button>
+                    <button type="button" class="chip-btn" data-filter="today" aria-pressed="false">היום</button>
+                    <button type="button" class="chip-btn" data-filter="overdue" aria-pressed="false">באיחור</button>
+                    <button type="button" class="chip-btn" data-filter="reminders" aria-pressed="false">עם תזכורת</button>
+                </div>
+                <label class="sort-control">
+                    <span>מיון</span>
+                    <select id="sortSelect" aria-label="מיון פתקים">
+                        <option value="newest">חדשים קודם</option>
+                        <option value="oldest">ישנים קודם</option>
+                        <option value="due">לפי מועד התזכורת</option>
+                        <option value="color">לפי צבע</option>
+                        <option value="alpha">לפי א-ב</option>
+                    </select>
+                </label>
             </div>
             <section class="create-note" id="createNoteSection" aria-label="פתק חדש">
                 <label for="note-text" class="sr-only">תוכן הפתק</label>
@@ -156,6 +178,7 @@
             </div>
             <button class="back-btn" id="backBtn" style="display: none;">חזור</button>
         </main>
+        <button class="fab fab-add" id="addFab" type="button" aria-label="פתק חדש" title="פתק חדש"></button>
 
         <!-- תצוגת לוח -->
         <div class="board-view" id="boardView" style="display: none;">
@@ -193,11 +216,6 @@
     <div id="customAlert" class="custom-alert">
         <p id="alertMessage"></p>
         <button id="close-alert-btn">אישור</button>
-    </div>
-    <div id="backupModal" class="custom-alert" style="display: none;">
-        <p id="backupMessage"></p>
-        <button id="confirm-backup-btn">כן, גבה עכשיו</button>
-        <button id="cancel-backup-btn">לא, דלג</button>
     </div>
     <div id="guideModal" class="guide-modal" style="display: none;" role="dialog" aria-modal="true" aria-labelledby="guideTitle">
         <div class="guide-modal-content">
