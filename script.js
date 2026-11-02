@@ -31,6 +31,50 @@ function escapeHTML(str) {
         .replace(/'/g, '&#039;');
 }
 
+// --- 1b2. עיצוב טקסט בפתק: שומרים רק תגיות עיצוב בטוחות ---
+
+const RICH_KEEP_TAGS = new Set(['B', 'STRONG', 'I', 'EM', 'U', 'FONT', 'SPAN', 'BR', 'DIV', 'P']);
+const RICH_DROP_TAGS = new Set(['SCRIPT', 'STYLE', 'IFRAME', 'OBJECT', 'EMBED', 'TEMPLATE', 'SVG', 'MATH', 'LINK', 'META']);
+const RICH_STYLE_PROPS = ['font-weight', 'font-style', 'text-decoration', 'text-decoration-line', 'font-size'];
+
+function sanitizeRichHTML(html) {
+    const tpl = document.createElement('template');
+    tpl.innerHTML = String(html || '');
+    const clean = (parent) => {
+        [...parent.childNodes].forEach(node => {
+            if (node.nodeType === Node.TEXT_NODE) return;
+            if (node.nodeType !== Node.ELEMENT_NODE) { node.remove(); return; }
+            if (RICH_DROP_TAGS.has(node.tagName)) { node.remove(); return; }
+            clean(node);
+            if (!RICH_KEEP_TAGS.has(node.tagName)) { node.replaceWith(...node.childNodes); return; }
+            const size = node.tagName === 'FONT' ? node.getAttribute('size') : null;
+            const style = node.tagName === 'SPAN' ? node.style : null;
+            const keptStyle = style ? RICH_STYLE_PROPS
+                .map(p => [p, style.getPropertyValue(p)])
+                .filter(([, v]) => v && /^[\w\s.%-]+$/.test(v))
+                .map(([p, v]) => `${p}: ${v}`).join('; ') : '';
+            [...node.attributes].forEach(a => node.removeAttribute(a.name));
+            if (size && /^[1-7]$/.test(size)) node.setAttribute('size', size);
+            if (keptStyle) node.setAttribute('style', keptStyle);
+            if (node.tagName === 'SPAN' && !keptStyle) node.replaceWith(...node.childNodes);
+        });
+    };
+    clean(tpl.content);
+    return tpl.innerHTML;
+}
+
+// true אם יש בתוכן עיצוב שצריך לשמור (ולא רק טקסט ושורות)
+function hasRichFormatting(html) {
+    return /<(b|strong|i|em|u|font|span)[\s>]/i.test(html || '');
+}
+
+// שומר את תוכן הפתק מתוך האלמנט: טקסט נקי (לחיפוש ולהתראות) + HTML מעוצב אם יש עיצוב
+function readNoteContent(note, contentEl) {
+    note.text = contentEl.innerText;
+    const html = sanitizeRichHTML(contentEl.innerHTML);
+    if (hasRichFormatting(html)) note.html = html; else delete note.html;
+}
+
 // --- 1c. חלונות מעוצבים במקום alert/confirm/prompt ---
 
 // יוצר חלון נגיש: role=dialog, מלכודת פוקוס, Escape לסגירה, החזרת פוקוס לכפתור שפתח אותו
@@ -240,6 +284,28 @@ let folderColors = tryParseJSON('folderColors', {});
 const validColors = ['pink', 'yellow', 'purple', 'green', 'orange', 'cyan', 'red'];
 const fixedFolders = ['תיקייה כללית', 'משימות שהושלמו', 'אשפה'];
 
+// בתיקיות האלה לא כותבים פתקים חדשים: פתק חדש שנוצר שם הולך לתיקייה הכללית
+function canComposeIn(folder) {
+    return folder !== 'משימות שהושלמו' && folder !== 'אשפה';
+}
+function composeTargetFolder() {
+    return canComposeIn(selectedFolder) ? selectedFolder : 'תיקייה כללית';
+}
+
+// הצבע שפתק מקבל כשהוא עובר לתיקייה
+function colorForFolder(note, target) {
+    if (target === 'אשפה') return folderColors['אשפה'] || '#bdc3c7';
+    if (folderColors[target]) return folderColors[target];
+    return note.customColor || 'green';
+}
+
+// התיקייה שפתק חוזר אליה כשמבטלים "הושלם": התיקייה שהיה בה, אם היא עוד קיימת
+function restoreFolderFor(note) {
+    const prev = note.prevFolder;
+    if (prev && canComposeIn(prev) && (prev === 'תיקייה כללית' || getFolders().includes(prev))) return prev;
+    return 'תיקייה כללית';
+}
+
 // --- הגדרת סאונד ---
 const SOUND_FILES = {
     'sound1': 'sound 1.wav',
@@ -425,7 +491,17 @@ function showMainContent() {
     if (defContainer) defContainer.classList.add('active');
     const defItem = document.querySelector('.folder-item[data-folder="תיקייה כללית"]');
     if (defItem) { defItem.classList.add('selected'); defItem.setAttribute('aria-current', 'true'); }
+    updateScopeLabels();
     loadNotesWithoutFolderView();
+}
+
+// טקסט עזר בשדה החיפוש ובתיבת הכתיבה לפי התיקייה הפתוחה
+function updateScopeLabels() {
+    const inFolder = isFolderViewActive && !isBoardViewActive && selectedFolder !== 'תיקייה כללית';
+    const search = document.getElementById('search-input');
+    if (search) search.placeholder = inFolder ? `חיפוש ב"${selectedFolder}"` : 'חיפוש בכל הפתקים';
+    const text = document.getElementById('note-text');
+    if (text) text.placeholder = inFolder ? `מה צריך לעשות? (יישמר ב"${selectedFolder}")` : 'מה צריך לעשות?';
 }
 
 function createFolder() {
@@ -538,6 +614,8 @@ function loadFolders() {
         if (folder === 'תיקייה כללית') return;
         const div = document.createElement('section');
         div.className = 'folder-container';
+        // אחרי בנייה מחדש (למשל שינוי צבע) התיקייה הפתוחה נשארת פתוחה
+        if (isFolderViewActive && !isBoardViewActive && selectedFolder === folder) div.classList.add('active');
         div.setAttribute('data-folder', folder);
         const titleEl = document.createElement('h2');
         titleEl.className = 'folder-title';
@@ -577,9 +655,11 @@ function selectFolder(folder) {
     if (isBoardViewActive) {
         loadNotesWithoutFolderView();
     } else {
-        setPageHeaderVisible(false);
+        // הכותרת נשארת גלויה: בלעדיה שורת החיפוש עולה מתחת לסרגל הכלים הצף
+        setPageHeaderVisible(true);
         const sec = document.getElementById('createNoteSection');
-        if(sec) sec.style.display = 'none';
+        if(sec) sec.style.display = canComposeIn(folder) ? 'block' : 'none';
+        updateScopeLabels();
         const back = document.getElementById('backBtn');
         if(back) back.style.display = 'inline-flex';
         loadNotesWithoutFolderView();
@@ -624,7 +704,7 @@ function createNote(fromModal = false) {
         id: (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : (Date.now().toString() + Math.random().toString(36).slice(2)),
         text: text,
         dueTime: due,
-        folder: selectedFolder,
+        folder: composeTargetFolder(),
         color: selectedColor,
         customColor: selectedColor,
         textColor: null,  // null = צבע ברירת מחדל לפי CSS (לא נעקב אחריו)
@@ -634,7 +714,9 @@ function createNote(fromModal = false) {
         pinned: false,
         left: 50, top: 50, width: 250, height: 250
     };
+    const notes = getNotes();
     if (isBoardViewActive) {
+        // בלוח: הפתק החדש מופיע במרכז המסך, ואם שם כבר יש פתק הוא זז קצת הצידה ולמטה
         const container = document.getElementById('boardContainer');
         const noteW = 250, noteH = 250;
         let cx = 50, cy = 50;
@@ -643,15 +725,17 @@ function createNote(fromModal = false) {
             cx = Math.max(0, Math.round(window.innerWidth  / 2 - r.left - noteW / 2));
             cy = Math.max(0, Math.round(window.innerHeight / 2 - r.top  - noteH / 2));
         }
+        const taken = notes.filter(n => n.folder === note.folder).map(n => notePositions[n.id]).filter(Boolean);
+        for (let k = 0; k < 20 && taken.some(p => Math.abs(p.left - cx) < 24 && Math.abs(p.top - cy) < 24); k++) {
+            cx += 32; cy += 32;
+        }
         note.left = cx; note.top = cy;
-    }
-    const notes = getNotes();
-    notes.unshift(note);
-    localStorage.setItem('notes', JSON.stringify(notes));
-    if (!notePositions[note.id]) {
-        notePositions[note.id] = { left: note.left, top: note.top, width: 250, height: 250 };
+        notePositions[note.id] = { left: cx, top: cy, width: noteW, height: noteH };
         localStorage.setItem('notePositions', JSON.stringify(notePositions));
     }
+    // ברשימה לא שומרים מיקום: בלוח הפתק יקבל מקום פנוי משלו
+    notes.unshift(note);
+    localStorage.setItem('notes', JSON.stringify(notes));
     clearForm();
     if (fromModal) {
         closeNewNoteModal();
@@ -687,13 +771,16 @@ function loadNotesWithoutFolderView() {
     }
 
     const perContainerIndex = new Map();
+    const boardPositions = isBoardViewActive
+        ? computeBoardPositions(notes.filter(n => !(isFolderViewActive && selectedFolder && n.folder !== selectedFolder)))
+        : null;
     notes.forEach(note => {
         if (isFolderViewActive && selectedFolder && note.folder !== selectedFolder) return;
         const el = createNoteElement(note, isDarkMode);
         if (note.id === _justAddedNoteId) el.classList.add('just-added');
         if (isBoardViewActive) {
             el.classList.add('board-note');
-            let pos = notePositions[note.id] || { left: 50, top: 50, width: 250, height: 250 };
+            let pos = boardPositions.get(note.id);
             el.style.left = pos.left + 'px';
             el.style.top = pos.top + 'px';
             el.style.width = pos.width + 'px';
@@ -716,6 +803,56 @@ function loadNotesWithoutFolderView() {
     searchNotes();
 }
 
+// מיקומי הפתקים בלוח. פתק בלי מיקום שמור, או שיושב בדיוק על פתק אחר (למשל כל הפתקים
+// שנוצרו ברשימה ונשמרו פעם ב-50,50), מקבל משבצת פנויה ברשת, והמיקום נשמר.
+const BOARD_CELL_W = 270, BOARD_CELL_H = 270, BOARD_PAD = 24;
+function computeBoardPositions(notes) {
+    const result = new Map();
+    const placed = [];
+    const needPlace = [];
+    notes.forEach(n => {
+        const saved = notePositions[n.id];
+        if (saved && !placed.some(r => r.left === saved.left && r.top === saved.top)) {
+            placed.push(saved);
+            result.set(n.id, saved);
+        } else {
+            needPlace.push(n);
+        }
+    });
+    if (!needPlace.length) return result;
+    // רוחב החלק של הלוח שרואים במסך (הלוח עצמו רחב יותר, ותפריט הצד מכסה את צד ימין)
+    const board = document.getElementById('boardContainer');
+    let boardW = window.innerWidth;
+    if (board) {
+        const r = board.getBoundingClientRect();
+        const sidebar = document.getElementById('foldersSidebar');
+        const sideLeft = sidebar ? sidebar.getBoundingClientRect().left : window.innerWidth;
+        const visibleRight = Math.min(r.right, window.innerWidth, sideLeft > 0 ? sideLeft : window.innerWidth);
+        boardW = visibleRight - r.left;
+    }
+    boardW = Math.max(BOARD_CELL_W + BOARD_PAD, boardW);
+    const cols = Math.max(1, Math.floor((boardW - BOARD_PAD) / BOARD_CELL_W));
+    const overlaps = (a, b) => a.left < b.left + b.width && b.left < a.left + a.width && a.top < b.top + b.height && b.top < a.top + a.height;
+    let slot = 0;
+    needPlace.forEach(n => {
+        const saved = notePositions[n.id];
+        const w = (saved && saved.width) || 250, h = (saved && saved.height) || 250;
+        let pos = null;
+        for (; slot < 5000 && !pos; slot++) {
+            const col = slot % cols, row = Math.floor(slot / cols);
+            // מימין לשמאל, כמו כיוון הקריאה
+            const c = { left: Math.max(0, boardW - BOARD_PAD - 250 - col * BOARD_CELL_W), top: BOARD_PAD + row * BOARD_CELL_H, width: w, height: h };
+            if (!placed.some(r => overlaps(c, r))) pos = c;
+        }
+        if (!pos) pos = { left: BOARD_PAD, top: BOARD_PAD, width: w, height: h };
+        placed.push(pos);
+        result.set(n.id, pos);
+        notePositions[n.id] = pos;
+    });
+    localStorage.setItem('notePositions', JSON.stringify(notePositions));
+    return result;
+}
+
 const EMPTY_STATES = {
     'תיקייה כללית': { icon: 'inbox', title: 'אין פתקים עדיין', text: 'כתוב משהו בתיבה למעלה כדי להתחיל.' },
     'משימות שהושלמו': { icon: 'checkCircle', title: 'עוד לא הושלמו משימות', text: 'משימה שתסמן כהושלמה תופיע כאן.' },
@@ -726,7 +863,7 @@ function renderEmptyStates() {
     document.querySelectorAll('.notes-container').forEach(c => {
         if (c.querySelector('.note')) return;
         const folder = c.getAttribute('data-folder');
-        const cfg = EMPTY_STATES[folder] || { icon: 'folder', title: 'התיקייה ריקה', text: 'אפשר להעביר לכאן פתקים דרך כפתור התיקייה שבכל פתק.' };
+        const cfg = EMPTY_STATES[folder] || { icon: 'folder', title: 'התיקייה ריקה', text: 'כתוב פתק בתיבה למעלה, או העבר לכאן פתק דרך כפתור התיקייה שבו.' };
         const empty = document.createElement('div');
         empty.className = 'empty-state';
         empty.innerHTML = `${ICONS[cfg.icon]}<strong></strong><span></span>`;
@@ -782,12 +919,21 @@ function formatRelative(iso) {
     const sec = Math.round((date.getTime() - Date.now()) / 1000);
     const abs = Math.abs(sec);
     if (abs < 60) return 'עכשיו';
-    try {
-        const rtf = new Intl.RelativeTimeFormat('he', { numeric: 'auto' });
-        if (abs < 3600) return rtf.format(Math.round(sec / 60), 'minute');
-        if (abs < 86400) return rtf.format(Math.round(sec / 3600), 'hour');
-        if (abs < 7 * 86400) return rtf.format(Math.round((startOfDay(date) - startOfDay(new Date())) / 86400000), 'day');
-    } catch (e) {}
+    // ניסוח ידני: Intl בעברית מחזיר צורות כמו "לפני דקה (1)"
+    const past = sec < 0;
+    const wrap = (t) => past ? 'לפני ' + t : 'בעוד ' + t;
+    if (abs < 3600) {
+        const m = Math.max(1, Math.round(abs / 60));
+        return wrap(m === 1 ? 'דקה' : m === 2 ? 'שתי דקות' : m + ' דקות');
+    }
+    if (abs < 86400) {
+        const h = Math.round(abs / 3600);
+        return wrap(h === 1 ? 'שעה' : h === 2 ? 'שעתיים' : h + ' שעות');
+    }
+    const days = Math.round((startOfDay(date) - startOfDay(new Date())) / 86400000);
+    if (days === -1) return 'אתמול';
+    if (days === 1) return 'מחר';
+    if (Math.abs(days) < 7) return wrap(Math.abs(days) === 2 ? 'יומיים' : Math.abs(days) + ' ימים');
     return date.toLocaleDateString('he-IL');
 }
 
@@ -808,10 +954,16 @@ function closeAllNoteMenus(except) {
 }
 
 function moveNoteToFolder(note, target) {
+    // "הושלם" תואם לתיקייה: מעבר אל משימות שהושלמו מסמן, מעבר לתיקייה רגילה מבטל
+    if (target === 'משימות שהושלמו' && !note.completed) {
+        if (canComposeIn(note.folder)) note.prevFolder = note.folder;
+        note.completed = true;
+    } else if (canComposeIn(target)) {
+        note.completed = false;
+        delete note.prevFolder;
+    }
     note.folder = target;
-    if (target === 'אשפה') { note.color = folderColors['אשפה'] || '#bdc3c7'; }
-    else if (folderColors[target]) { note.color = folderColors[target]; }
-    else { note.color = note.customColor || 'green'; }
+    note.color = colorForFolder(note, target);
     updateNoteInStorage(note);
     loadNotesWithoutFolderView();
     showToast(`הועבר אל "${target}"`);
@@ -887,23 +1039,40 @@ function createNoteElement(note, isDarkMode) {
     };
     const completeBtn = div.querySelector('.complete-btn');
     completeBtn.onclick = () => {
+        const before = { completed: note.completed, folder: note.folder, color: note.color, prevFolder: note.prevFolder };
+        const undo = {
+            label: 'ביטול',
+            onClick: () => {
+                const all = getNotes();
+                const n = all.find(x => x.id === note.id);
+                if (!n) return;
+                Object.assign(n, before);
+                if (before.prevFolder === undefined) delete n.prevFolder;
+                localStorage.setItem('notes', JSON.stringify(all));
+                loadNotesWithoutFolderView();
+            }
+        };
         if (note.completed) {
+            const target = restoreFolderFor(note);
             note.completed = false;
-            note.folder = 'תיקייה כללית';
-            note.color = note.customColor || 'green';
+            note.folder = target;
+            note.color = colorForFolder(note, target);
+            delete note.prevFolder;
             completeBtn.setAttribute('aria-pressed', 'false');
             completeBtn.setAttribute('aria-label', 'סמן כהושלם');
             completeBtn.title = 'סמן כהושלם';
             completeBtn.classList.remove('active');
-            showToast('הוחזר לתיקייה הכללית');
+            showToast(`הוחזר אל "${target}"`, 5000, undo);
         } else {
+            // זוכרים מאיזו תיקייה הפתק הגיע, כדי להחזיר אותו לשם אם מבטלים
+            if (canComposeIn(note.folder)) note.prevFolder = note.folder;
             note.completed = true;
             note.folder = 'משימות שהושלמו';
             completeBtn.setAttribute('aria-pressed', 'true');
             completeBtn.setAttribute('aria-label', 'בטל סימון הושלם');
             completeBtn.title = 'לחץ לביטול הסימון';
             completeBtn.classList.add('active');
-            showToast('הועבר למשימות שהושלמו ✓');
+            showToast('הועבר למשימות שהושלמו ✓', 5000, undo);
         }
         updateNoteInStorage(note);
         // רגע קצר כדי לראות את הסימון לפני שהפתק עובר תיקייה
@@ -912,18 +1081,41 @@ function createNoteElement(note, isDarkMode) {
     div.querySelector('.pin-btn').onclick = () => togglePin(note.id);
     div.querySelector('.extend-btn').onclick = () => {
         openDateModal(note.dueTime, (newTime) => {
-            if (newTime) { note.dueTime = newTime; note.notified = false; note.completed = false; updateNoteInStorage(note); loadNotesWithoutFolderView(); showToast('התזכורת נשמרה · ' + formatDue(newTime)); }
+            if (newTime) {
+                note.dueTime = newTime;
+                note.notified = false;
+                // תזכורת חדשה לפתק שהושלם: הוא חוזר להיות משימה פתוחה, בתיקייה שהיה בה
+                if (note.completed || note.folder === 'משימות שהושלמו') {
+                    note.completed = false;
+                    if (note.folder === 'משימות שהושלמו') {
+                        note.folder = restoreFolderFor(note);
+                        note.color = colorForFolder(note, note.folder);
+                    }
+                    delete note.prevFolder;
+                }
+                updateNoteInStorage(note);
+                loadNotesWithoutFolderView();
+                showToast('התזכורת נשמרה · ' + formatDue(newTime));
+            } else if (note.dueTime) {
+                note.dueTime = '';
+                note.notified = false;
+                updateNoteInStorage(note);
+                loadNotesWithoutFolderView();
+                showToast('התזכורת הוסרה');
+            }
         });
     };
 
     const editBtn = div.querySelector('.edit-btn');
     const toolbar = div.querySelector('.note-toolbar');
-    content.textContent = note.text; // בטוח מ-XSS
+    // טקסט מעוצב נשמר כ-HTML מסונן; פתק בלי עיצוב מוצג כטקסט רגיל (בטוח מ-XSS)
+    if (note.html) content.innerHTML = sanitizeRichHTML(note.html);
+    else content.textContent = note.text;
 
     editBtn.onclick = () => {
         const isEditing = toolbar.style.display === 'flex';
         if (isEditing) {
-            toolbar.style.display = 'none'; content.contentEditable = 'false'; note.text = content.innerText; updateNoteInStorage(note);
+            toolbar.style.display = 'none'; content.contentEditable = 'false'; readNoteContent(note, content); updateNoteInStorage(note);
             editBtn.setAttribute('aria-pressed', 'false');
         } else {
             document.querySelectorAll('.note-toolbar').forEach(t => t.style.display = 'none');
@@ -960,6 +1152,8 @@ function createNoteElement(note, isDarkMode) {
             if (cmd === 'increaseFontSize') document.execCommand('fontSize', false, '4');
             else if (cmd === 'decreaseFontSize') document.execCommand('fontSize', false, '2');
             else document.execCommand(cmd, false, null);
+            readNoteContent(note, content);
+            updateNoteInStorage(note);
         };
     });
 
@@ -1011,7 +1205,7 @@ function createNoteElement(note, isDarkMode) {
         };
     });
 
-    content.addEventListener('input', function() { note.text = this.innerText; updateNoteInStorage(note); });
+    content.addEventListener('input', function() { readNoteContent(note, this); updateNoteInStorage(note); });
     return div;
 }
 
@@ -1120,9 +1314,6 @@ function showGuideModal() {
             <span><kbd>Esc</kbd> סגירה</span>
         </div>
         <div class="guide-footer">
-            <label class="guide-check">
-                <input type="checkbox" id="markGuideRead"> קראתי והבנתי, אל תציג שוב
-            </label>
             <button id="closeGuideModalAction" class="btn btn-primary btn-block">בואו נתחיל</button>
             <div class="copyright-footer">&copy; 2026 כל הזכויות שמורות - אדיר אקוע</div>
         </div>
@@ -1141,8 +1332,8 @@ function showGuideModal() {
 }
 
 function handleGuideClose() {
-    const checkbox = document.getElementById('markGuideRead');
-    if (checkbox && checkbox.checked) localStorage.setItem('hasSeenGuide_final_v1', 'true');
+    // ההדרכה מוצגת פעם אחת. אפשר לחזור אליה בכל זמן דרך כפתור המידע
+    localStorage.setItem('hasSeenGuide_final_v1', 'true');
     document.getElementById('guideModal').style.display = 'none';
     if (_guideCloseFocus) { _guideCloseFocus(); _guideCloseFocus = null; }
 }
@@ -1154,26 +1345,40 @@ function closeGuideModalFromAction() { handleGuideClose(); }
 function searchNotes() {
     const s1 = document.getElementById('search-input');
     const s2 = document.getElementById('board-search-input');
-    const val1 = s1 ? s1.value.toLowerCase() : '';
-    const val2 = s2 ? s2.value.toLowerCase() : '';
-    const term = (isBoardViewActive ? (val2 || val1) : (val1 || val2)).trim();
+    const val1 = s1 ? s1.value : '';
+    const val2 = s2 ? s2.value : '';
+    const raw = (isBoardViewActive ? (val2 || val1) : (val1 || val2)).trim();
+    const term = raw.toLowerCase();
     document.querySelectorAll('.note').forEach(note => {
         const text = (note.querySelector('.note-content') || note).innerText.toLowerCase();
         note.style.display = text.includes(term) ? 'flex' : 'none';
     });
-    document.querySelectorAll('.notes-container').forEach(c => {
-        const old = c.querySelector('.no-results');
-        if (old) old.remove();
-        const notes = c.querySelectorAll('.note');
-        const empty = c.querySelector('.empty-state');
-        if (empty) empty.style.display = term ? 'none' : '';
-        if (!term || !notes.length) return;
-        if ([...notes].some(n => n.style.display !== 'none')) return;
-        const msg = document.createElement('p');
-        msg.className = 'no-results';
-        msg.textContent = `לא נמצאו פתקים עבור "${term}"`;
-        c.appendChild(msg);
+    document.querySelectorAll('.no-results').forEach(m => m.remove());
+    document.querySelectorAll('.notes-container .empty-state').forEach(e => { e.style.display = term ? 'none' : ''; });
+
+    // במסך הראשי החיפוש עובר על כל התיקיות: כל תיקייה שיש בה תוצאה מוצגת עם הכותרת שלה
+    const globalSearch = !!term && !isBoardViewActive && !isFolderViewActive;
+    const visible = n => n.style.display !== 'none';
+    let anyHit = false;
+    document.querySelectorAll('.folder-container').forEach(fc => {
+        const hit = globalSearch && [...fc.querySelectorAll('.note')].some(visible);
+        if (hit) anyHit = true;
+        fc.classList.toggle('search-match', hit);
     });
+    document.body.classList.toggle('is-searching', globalSearch);
+    if (!term || isBoardViewActive) return;
+    if (globalSearch ? anyHit : [...document.querySelectorAll('.folder-container.active .note')].some(visible)) return;
+
+    // אין תוצאות: הודעה אחת בתיקייה שמוצגת
+    const active = document.querySelector('.folder-container.active');
+    if (!active) return;
+    active.classList.add('search-match');
+    const target = active.querySelector('.notes-container');
+    if (!target) return;
+    const msg = document.createElement('p');
+    msg.className = 'no-results';
+    msg.textContent = globalSearch ? `לא נמצאו פתקים עבור "${raw}"` : `לא נמצאו פתקים עבור "${raw}" בתיקייה "${selectedFolder}"`;
+    target.appendChild(msg);
 }
 
 function autosizeTextarea(el) {
@@ -1630,30 +1835,58 @@ function showDueNotification(text) {
     }
 }
 
+let _rerenderAfterEdit = false;
+function isEditingNote() {
+    return !!document.querySelector('.note-content[contenteditable="true"]');
+}
+
 function checkDueTimes() {
     const notes = getNotes();
     const now = Date.now();
-    let changed = false;
+    const due = [];
     notes.forEach(n => {
-        if (n.dueTime && !n.completed && !n.notified) {
+        // פתק באשפה או שהושלם לא מצלצל
+        if (n.dueTime && !n.completed && !n.notified && n.folder !== 'אשפה' && n.folder !== 'משימות שהושלמו') {
             const dueMs = new Date(n.dueTime).getTime();
             if (dueMs <= now) {
-                alertSound.play().catch(e => console.log('Audio blocked until interaction'));
-                showCustomAlertModal(n.text);
-                showDueNotification(n.text);
                 n.notified = true;
-                changed = true;
+                due.push(n);
             }
         }
     });
-    if (changed) {
+    if (due.length) {
         localStorage.setItem('notes', JSON.stringify(notes));
+        alertSound.play().catch(e => console.log('Audio blocked until interaction'));
+        due.forEach(n => { showCustomAlertModal(n.text); showDueNotification(n.text); });
+        _rerenderAfterEdit = true;
+    }
+    // לא בונים את הרשימה מחדש באמצע עריכה, כדי לא לקטוע את ההקלדה
+    if (_rerenderAfterEdit && !isEditingNote()) {
+        _rerenderAfterEdit = false;
         loadNotesWithoutFolderView();
+    } else if (due.length) {
+        due.forEach(n => {
+            const el = document.querySelector(`.note[data-id="${CSS.escape(n.id)}"]`);
+            if (el) el.classList.add('notified');
+        });
     }
 }
 
+// חלון "הזמן עבר!": כמה תזכורות שמגיעות יחד מוצגות באותו חלון, כל אחת בשורה משלה
 function showCustomAlertModal(text) {
-    if (document.getElementById('custom-alert-overlay')) return;
+    const existing = document.getElementById('custom-alert-overlay');
+    if (existing && existing.dataset.state !== 'closed') {
+        const body = existing.querySelector('.dialog-body');
+        if (body) {
+            const quote = document.createElement('div');
+            quote.className = 'dialog-quote';
+            quote.textContent = text;
+            body.appendChild(quote);
+            const title = existing.querySelector('.dialog-title');
+            if (title) title.textContent = `הזמן עבר! (${body.querySelectorAll('.dialog-quote').length} תזכורות)`;
+            return;
+        }
+    }
     const d = createDialog({
         id: 'custom-alert-overlay',
         title: 'הזמן עבר!',
@@ -1699,6 +1932,7 @@ function openDateModal(currentTime, callback) {
         b.setAttribute('aria-pressed', 'false');
         quick.appendChild(b);
     });
+    if (currentTime) d.addButton('הסר תזכורת', 'secondary', () => { callback(''); d.close(); });
     d.addButton('ביטול', 'secondary', () => d.close());
     d.addButton('שמירה', 'primary', () => { callback(input.value); d.close(); });
     setTimeout(() => (quick.querySelector('button') || input).focus(), 30);
@@ -1894,7 +2128,7 @@ function setupEventListeners() {
         } else if (e.code === 'KeyN') {
             e.preventDefault();
             if (isBoardViewActive) { openNewNoteModal(); return; }
-            if (isFolderViewActive) showMainContent();
+            if (isFolderViewActive && !canComposeIn(selectedFolder)) showMainContent();
             const field = document.getElementById('note-text');
             if (field) { field.focus(); field.scrollIntoView({ block: 'center', behavior: 'smooth' }); }
         }

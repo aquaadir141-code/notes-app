@@ -646,6 +646,13 @@ h1 {
 .folder-container.active {
     display: block;
 }
+/* חיפוש מהמסך הראשי: מציגים כל תיקייה שיש בה תוצאה, ומסתירים את השאר */
+body.is-searching .folder-container {
+    display: none;
+}
+body.is-searching .folder-container.search-match {
+    display: block;
+}
 
 #folders-notes-container {
     display: flex;
