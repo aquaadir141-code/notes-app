@@ -2194,19 +2194,6 @@ body.dark-mode .toast-action {
    ========================================================================== */
 
 @media (min-width: 1100px) {
-    .folders-sidebar {
-        transform: none;
-        visibility: visible;
-        box-shadow: none;
-        transition: background-color 200ms ease;
-    }
-    .sidebar-scrim,
-    .sidebar-toggle {
-        display: none;
-    }
-    .main-container {
-        padding-right: var(--sidebar-width);
-    }
     .content {
         padding-top: calc(36px + env(safe-area-inset-top, 0px));
     }
@@ -2227,10 +2214,8 @@ body.dark-mode .toast-action {
     }
 }
 
-@media (max-width: 1099px) {
-    #closeSidebarBtn {
-        display: inline-flex;
-    }
+#closeSidebarBtn {
+    display: inline-flex;
 }
 
 /* ==========================================================================
