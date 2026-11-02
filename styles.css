@@ -2357,3 +2357,84 @@ body.dark-mode .toast-action {
         border: 1px solid CanvasText;
     }
 }
+
+/* --- גיבוי אוטומטי --- */
+.auto-backup-btn {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    min-height: 36px;
+    padding: 6px 10px;
+    border-radius: var(--radius-md);
+    background: var(--accent-soft);
+    color: var(--accent-text);
+    font-size: 0.82rem;
+    font-weight: 500;
+    text-align: right;
+    transition: transform 160ms var(--ease-out), background-color 160ms ease;
+}
+.auto-backup-btn svg {
+    flex-shrink: 0;
+}
+.auto-backup-btn span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.auto-backup-btn:active {
+    transform: scale(0.97);
+}
+@media (hover: hover) and (pointer: fine) {
+    .auto-backup-btn:hover {
+        background: color-mix(in srgb, var(--accent) 16%, var(--surface));
+    }
+}
+
+.auto-backup-list {
+    list-style: none;
+    margin: 14px 0 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+.auto-backup-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 10px 14px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    background: var(--surface-2);
+}
+.auto-backup-info {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+}
+.auto-backup-date {
+    font-weight: 600;
+    color: var(--text);
+}
+.auto-backup-meta,
+.auto-backup-empty {
+    font-size: 0.85rem;
+    color: var(--text-3);
+}
+.auto-backup-restore {
+    min-height: 36px;
+    padding: 0 14px;
+    flex-shrink: 0;
+}
+.auto-backup-folder {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+    margin-top: 16px;
+    padding-top: 14px;
+    border-top: 1px solid var(--border);
+}

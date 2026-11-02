@@ -1312,43 +1312,60 @@ function clearTrash() {
     }, null, { title: 'לרוקן את האשפה?', confirmText: 'רוקן אשפה' });
 }
 
-// --- גיבוי: IndexedDB לשמירת תיקיית גיבוי ---
+// --- גיבוי ---
+// גיבוי אוטומטי בלי לחיצות ובלי הודעות קופצות:
+// 1. כל יום נשמר עותק בתוך האפליקציה (IndexedDB), ונשמרים 30 הימים האחרונים. ניתן לשחזר מהרשימה.
+// 2. באפליקציית האנדרואיד (גרסה עם AndroidAutoBackup) העותק נשמר גם כקובץ בתיקייה Documents/Notes Backups
+//    בטלפון, שנשארת גם אם מוחקים את האפליקציה.
+// 3. במחשב אפשר לבחור פעם אחת תיקייה, והגיבוי נכתב אליה כל עוד הדפדפן זוכר את האישור.
+// גיבוי היום מתעדכן כשהפתקים משתנים, כך שהוא תמיד המצב האחרון של אותו יום.
+const AUTO_BACKUP_KEEP_DAYS = 30;
+const AUTO_BACKUP_CHECK_MS = 60 * 1000;
+
 function openBackupDB() {
     return new Promise((resolve, reject) => {
-        const req = indexedDB.open('notesBackupDB', 1);
-        req.onupgradeneeded = e => e.target.result.createObjectStore('handles', { keyPath: 'key' });
+        const req = indexedDB.open('notesBackupDB', 2);
+        req.onupgradeneeded = e => {
+            const db = e.target.result;
+            if (!db.objectStoreNames.contains('handles')) db.createObjectStore('handles', { keyPath: 'key' });
+            if (!db.objectStoreNames.contains('snapshots')) db.createObjectStore('snapshots', { keyPath: 'date' });
+        };
         req.onsuccess = e => resolve(e.target.result);
         req.onerror = () => reject(req.error);
     });
 }
 
+function backupDBRequest(store, mode, fn) {
+    return openBackupDB().then(db => new Promise((resolve, reject) => {
+        const tx = db.transaction(store, mode);
+        const req = fn(tx.objectStore(store));
+        let result;
+        if (req) req.onsuccess = () => { result = req.result; };
+        tx.oncomplete = () => { db.close(); resolve(result); };
+        tx.onerror = () => { db.close(); reject(tx.error); };
+        tx.onabort = () => { db.close(); reject(tx.error); };
+    }));
+}
+
 async function saveBackupDirHandle(handle) {
-    try {
-        const db = await openBackupDB();
-        await new Promise((resolve, reject) => {
-            const tx = db.transaction('handles', 'readwrite');
-            tx.objectStore('handles').put({ key: 'backupDir', handle });
-            tx.oncomplete = resolve;
-            tx.onerror = () => reject(tx.error);
-        });
-    } catch (e) {}
+    try { await backupDBRequest('handles', 'readwrite', s => s.put({ key: 'backupDir', handle })); } catch (e) {}
 }
 
 async function getBackupDirHandle() {
     try {
-        const db = await openBackupDB();
-        return await new Promise(resolve => {
-            const tx = db.transaction('handles', 'readonly');
-            const req = tx.objectStore('handles').get('backupDir');
-            req.onsuccess = () => resolve(req.result ? req.result.handle : null);
-            req.onerror = () => resolve(null);
-        });
+        const row = await backupDBRequest('handles', 'readonly', s => s.get('backupDir'));
+        return row ? row.handle : null;
     } catch (e) { return null; }
 }
 
+function buildBackupData() {
+    return { notes: getNotes(), folders: getFolders(), folderColors, notePositions };
+}
+function buildBackupJson() {
+    return JSON.stringify(buildBackupData(), null, 2);
+}
 function buildBackupBlob() {
-    const data = { notes: getNotes(), folders: getFolders(), folderColors, notePositions };
-    return new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    return new Blob([buildBackupJson()], { type: 'application/json' });
 }
 
 function fallbackBackupDownload(filename) {
@@ -1362,13 +1379,14 @@ function fallbackBackupDownload(filename) {
     URL.revokeObjectURL(url);
 }
 
-async function writeBlobToDir(dirHandle, filename) {
+async function writeBlobToDir(dirHandle, filename, json) {
     const fileHandle = await dirHandle.getFileHandle(filename, { create: true });
     const writable = await fileHandle.createWritable();
-    await writable.write(buildBackupBlob());
+    await writable.write(new Blob([json || buildBackupJson()], { type: 'application/json' }));
     await writable.close();
 }
 
+// שמירה ידנית לקובץ (הכפתור "שמור לקובץ")
 async function backupNotes() {
     const today = localDateKey();
     const filename = `notes_backup_${today}.json`;
@@ -1415,53 +1433,248 @@ function localDateKey(d = new Date()) {
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
-// גיבוי יומי ב-16:00. אם האפליקציה לא הייתה פתוחה בזמן, הגיבוי נעשה בפתיחה הבאה באותו יום.
-// דפדפן לא יכול לכתוב לקובץ בלי אישור: אם התיקייה שנבחרה מאושרת הגיבוי שקט, אחרת מוצגת בקשה בלחיצה אחת.
-let _autoBackupPromptedFor = null;
-async function autoBackupIfTime() {
-    const now = new Date();
-    if (now.getHours() < 16) return;
-    const today = localDateKey(now);
-    if (localStorage.getItem('lastAutoBackup') === today) return;
-    if (_autoBackupPromptedFor === today) return;
-    _autoBackupPromptedFor = today;
+// --- גיבוי אוטומטי ---
+function hasNativeAutoBackup() {
+    return !!(window.AndroidAutoBackup && typeof window.AndroidAutoBackup.saveDaily === 'function');
+}
 
-    const dirHandle = await getBackupDirHandle();
-    if (dirHandle) {
-        try {
-            if (await dirHandle.queryPermission({ mode: 'readwrite' }) === 'granted') {
-                await writeBlobToDir(dirHandle, `notes_backup_${today}.json`);
-                localStorage.setItem('lastAutoBackup', today);
-                showToast('הגיבוי היומי נשמר 💾', 4000);
-                return;
-            }
-        } catch (e) {}
-    }
-    showToast('הגיע הזמן לגיבוי היומי', 20000, {
-        label: 'גבה עכשיו',
-        onClick: async () => {
-            await backupNotes();
-            localStorage.setItem('lastAutoBackup', today);
+async function listAutoBackups() {
+    try {
+        const rows = await backupDBRequest('snapshots', 'readonly', s => s.getAll());
+        return (rows || []).sort((a, b) => b.date.localeCompare(a.date));
+    } catch (e) { return []; }
+}
+
+async function getAutoBackup(date) {
+    try { return await backupDBRequest('snapshots', 'readonly', s => s.get(date)); } catch (e) { return null; }
+}
+
+let _lastAutoBackupJson = null;
+let _lastAutoBackupCheck = 0;
+let _autoBackupRunning = false;
+
+// נקרא בטעינה ובכל דקה. שקט לגמרי: אין הודעות, אין חלונות.
+async function runAutoBackup(force) {
+    if (_autoBackupRunning) return;
+    const nowMs = Date.now();
+    if (!force && nowMs - _lastAutoBackupCheck < AUTO_BACKUP_CHECK_MS) return;
+    _lastAutoBackupCheck = nowMs;
+    _autoBackupRunning = true;
+    try {
+        const today = localDateKey();
+        const json = buildBackupJson();
+        const alreadyToday = localStorage.getItem('lastAutoBackup') === today;
+        if (alreadyToday && json === _lastAutoBackupJson) return;
+
+        const data = JSON.parse(json);
+        // לא דורסים גיבוי טוב בגיבוי ריק (למשל אחרי שהנתונים נמחקו בטעות)
+        if (!data.notes.length) {
+            const existing = await getAutoBackup(today);
+            if (existing && existing.data && existing.data.notes && existing.data.notes.length) { _lastAutoBackupJson = json; return; }
         }
+
+        await backupDBRequest('snapshots', 'readwrite', s => s.put({
+            date: today,
+            savedAt: new Date().toISOString(),
+            noteCount: data.notes.filter(n => n.folder !== 'אשפה').length,
+            data
+        }));
+        await pruneAutoBackups();
+
+        const filename = `notes_backup_${today}.json`;
+        if (hasNativeAutoBackup()) {
+            try { window.AndroidAutoBackup.saveDaily(filename, json, AUTO_BACKUP_KEEP_DAYS); } catch (e) {}
+        }
+        const dirHandle = await getBackupDirHandle();
+        if (dirHandle) {
+            try {
+                if (await dirHandle.queryPermission({ mode: 'readwrite' }) === 'granted') {
+                    await writeBlobToDir(dirHandle, filename, json);
+                    localStorage.setItem('lastFolderBackup', new Date().toISOString());
+                }
+            } catch (e) {}
+        }
+
+        _lastAutoBackupJson = json;
+        localStorage.setItem('lastAutoBackup', today);
+        localStorage.setItem('lastAutoBackupAt', new Date().toISOString());
+        updateAutoBackupStatus();
+    } catch (e) {
+        console.warn('auto backup failed', e);
+    } finally {
+        _autoBackupRunning = false;
+    }
+}
+
+async function pruneAutoBackups() {
+    const rows = await listAutoBackups();
+    const old = rows.slice(AUTO_BACKUP_KEEP_DAYS);
+    if (!old.length) return;
+    await backupDBRequest('snapshots', 'readwrite', s => { old.forEach(r => s.delete(r.date)); return null; });
+}
+
+// מבקש מהדפדפן לא למחוק את האחסון של האתר כשהמקום מתמלא
+function requestPersistentStorage() {
+    try {
+        if (navigator.storage && navigator.storage.persist) {
+            navigator.storage.persisted().then(p => { if (!p) navigator.storage.persist(); }).catch(() => {});
+        }
+    } catch (e) {}
+}
+
+function formatBackupDate(dateKey) {
+    const [y, m, d] = dateKey.split('-').map(Number);
+    const date = new Date(y, m - 1, d);
+    const today = localDateKey();
+    const yesterday = localDateKey(new Date(Date.now() - 864e5));
+    if (dateKey === today) return 'היום';
+    if (dateKey === yesterday) return 'אתמול';
+    return date.toLocaleDateString('he-IL', { weekday: 'long', day: 'numeric', month: 'numeric' });
+}
+
+function formatBackupTime(iso) {
+    try { return new Date(iso).toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' }); } catch (e) { return ''; }
+}
+
+function updateAutoBackupStatus() {
+    const el = document.getElementById('auto-backup-status');
+    if (!el) return;
+    const at = localStorage.getItem('lastAutoBackupAt');
+    if (!at) { el.textContent = 'גיבוי אוטומטי פעיל'; return; }
+    const d = new Date(at);
+    el.textContent = `גיבוי אוטומטי · ${formatBackupDate(localDateKey(d))} ${formatBackupTime(at)}`;
+}
+
+// מחזיר את הנתונים לאפליקציה מתוך אובייקט גיבוי (מקובץ או מגיבוי אוטומטי)
+function applyBackupData(data) {
+    if (!data || !Array.isArray(data.notes)) throw new Error('bad backup');
+    localStorage.setItem('notes', JSON.stringify(data.notes));
+    if (data.folders) localStorage.setItem('folders', JSON.stringify(data.folders));
+    localStorage.setItem('folderColors', JSON.stringify(data.folderColors || {}));
+    localStorage.setItem('notePositions', JSON.stringify(data.notePositions || {}));
+    folderColors = data.folderColors || {};
+    notePositions = data.notePositions || {};
+    repairStoredData();
+    loadFolders();
+    loadNotesWithoutFolderView();
+    _lastAutoBackupCheck = 0;
+}
+
+async function openAutoBackupsDialog() {
+    const rows = await listAutoBackups();
+    const d = createDialog({
+        id: '_autoBackupsModal',
+        title: 'גיבויים אוטומטיים',
+        message: hasNativeAutoBackup()
+            ? 'כל יום נשמר גיבוי בלי שתצטרך לעשות כלום, גם באפליקציה וגם כקובץ בתיקייה "Documents/Notes Backups" בטלפון. נשמרים 30 הימים האחרונים.'
+            : 'כל יום נשמר גיבוי בלי שתצטרך לעשות כלום. נשמרים 30 הימים האחרונים.',
+        icon: 'checkCircle',
+        wide: true
     });
+
+    const list = document.createElement('ul');
+    list.className = 'auto-backup-list';
+    if (!rows.length) {
+        const li = document.createElement('li');
+        li.className = 'auto-backup-empty';
+        li.textContent = 'עדיין אין גיבויים. הגיבוי הראשון יישמר בעוד רגע.';
+        list.appendChild(li);
+    }
+    rows.forEach(row => {
+        const li = document.createElement('li');
+        li.className = 'auto-backup-item';
+        const info = document.createElement('div');
+        info.className = 'auto-backup-info';
+        const title = document.createElement('span');
+        title.className = 'auto-backup-date';
+        title.textContent = formatBackupDate(row.date);
+        const meta = document.createElement('span');
+        meta.className = 'auto-backup-meta';
+        meta.textContent = `${row.noteCount} פתקים · נשמר ב-${formatBackupTime(row.savedAt)}`;
+        info.append(title, meta);
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'btn btn-secondary auto-backup-restore';
+        btn.textContent = 'שחזר';
+        btn.setAttribute('aria-label', `שחזר את הגיבוי של ${title.textContent}`);
+        btn.onclick = () => {
+            showConfirm(`הפתקים יחזרו למצב של ${title.textContent} (${row.noteCount} פתקים). המצב הנוכחי נשמר בגיבוי של היום ואפשר לחזור אליו.`, async () => {
+                // שומר את המצב הנוכחי לפני השחזור, כדי שאפשר יהיה להתחרט
+                if (row.date !== localDateKey()) await runAutoBackup(true);
+                try {
+                    applyBackupData(row.data);
+                    d.close();
+                    showToast('הפתקים שוחזרו 🎉');
+                } catch (e) {
+                    showAlert('לא ניתן לשחזר את הגיבוי הזה.');
+                }
+            }, null, { title: 'לשחזר את הגיבוי?', confirmText: 'שחזר', icon: 'checkCircle', tone: 'warning' });
+        };
+        li.append(info, btn);
+        list.appendChild(li);
+    });
+    d.body.appendChild(list);
+
+    // במחשב: אפשרות לשמור עותק גם לתיקייה במחשב, באישור חד-פעמי
+    if ('showDirectoryPicker' in window && !hasNativeAutoBackup()) {
+        const folderRow = document.createElement('div');
+        folderRow.className = 'auto-backup-folder';
+        const text = document.createElement('p');
+        text.className = 'auto-backup-meta';
+        folderRow.appendChild(text);
+        const folderBtn = document.createElement('button');
+        folderBtn.type = 'button';
+        folderBtn.className = 'btn btn-secondary';
+        folderRow.appendChild(folderBtn);
+        d.body.appendChild(folderRow);
+
+        const refresh = async () => {
+            const handle = await getBackupDirHandle();
+            let perm = null;
+            try { perm = handle ? await handle.queryPermission({ mode: 'readwrite' }) : null; } catch (e) {}
+            if (!handle) {
+                text.textContent = 'רוצה עותק נוסף גם בתיקייה במחשב? בוחרים תיקייה פעם אחת, והגיבוי היומי ייכתב אליה לבד.';
+                folderBtn.textContent = 'בחר תיקיית גיבוי';
+            } else if (perm === 'granted') {
+                text.textContent = `הגיבוי נכתב גם לתיקייה "${handle.name}" במחשב.`;
+                folderBtn.textContent = 'החלף תיקייה';
+            } else {
+                text.textContent = `הדפדפן צריך אישור מחדש לכתוב לתיקייה "${handle.name}". בינתיים הגיבוי נשמר באפליקציה.`;
+                folderBtn.textContent = 'אשר תיקייה';
+            }
+            folderBtn.onclick = async () => {
+                try {
+                    let h = handle;
+                    if (h && perm !== 'granted') {
+                        if (await h.requestPermission({ mode: 'readwrite' }) !== 'granted') h = null;
+                    } else {
+                        h = null;
+                    }
+                    if (!h) {
+                        h = await window.showDirectoryPicker({ mode: 'readwrite' });
+                        await saveBackupDirHandle(h);
+                    }
+                    localStorage.removeItem('lastAutoBackup');
+                    await runAutoBackup(true);
+                    refresh();
+                } catch (e) {}
+            };
+        };
+        refresh();
+    }
+
+    d.addButton('סגור', 'primary', () => d.close()).focus();
 }
 
 function restoreNotes(event) {
     const file = event.target.files[0];
     if (!file) return;
     const reader = new FileReader();
-    reader.onload = function(e) {
+    reader.onload = async function(e) {
         try {
             const data = JSON.parse(e.target.result);
-            if (data.notes) localStorage.setItem('notes', JSON.stringify(data.notes));
-            if (data.folders) localStorage.setItem('folders', JSON.stringify(data.folders));
-            if (data.folderColors) localStorage.setItem('folderColors', JSON.stringify(data.folderColors));
-            if (data.notePositions) localStorage.setItem('notePositions', JSON.stringify(data.notePositions));
-            folderColors = data.folderColors || {};
-            notePositions = data.notePositions || {};
-            repairStoredData();
-            loadFolders();
-            loadNotesWithoutFolderView();
+            await runAutoBackup(true);
+            applyBackupData(data);
             showAlert('שוחזר בהצלחה! 🎉');
         } catch (err) {
             showAlert('שגיאה בקובץ הגיבוי. ודא שהקובץ תקין.');
@@ -1812,6 +2025,8 @@ function setupEventListeners() {
         restoreBtn.onclick = () => restoreInput.click();
         restoreInput.onchange = restoreNotes;
     }
+    const autoBackupBtn = document.getElementById('auto-backups-btn');
+    if (autoBackupBtn) autoBackupBtn.onclick = openAutoBackupsDialog;
 
     const cpBtn = document.getElementById('note-color-picker-btn');
     const cpInp = document.getElementById('note-color-picker');
@@ -1976,5 +2191,10 @@ document.addEventListener('DOMContentLoaded', function() {
 
     setupEventListeners();
     if (window._dueDateInterval) clearInterval(window._dueDateInterval);
-    window._dueDateInterval = setInterval(() => { checkDueTimes(); autoBackupIfTime(); }, 5000);
+    window._dueDateInterval = setInterval(() => { checkDueTimes(); runAutoBackup(); }, 5000);
+    requestPersistentStorage();
+    updateAutoBackupStatus();
+    runAutoBackup(true);
+    // שמירה גם כשיוצאים מהאפליקציה או מעבירים אותה לרקע
+    document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') runAutoBackup(true); });
 });
