@@ -605,8 +605,9 @@ function folderIconFor(folder) {
     return ICONS.folder;
 }
 
+// תפריט התיקיות לא קבוע: הוא נפתח במעבר עכבר או בלחיצה על כפתור התפריט ונסגר כשיוצאים ממנו, בכל גודל מסך
 function isSidebarPinned() {
-    return window.matchMedia('(min-width: 1100px)').matches;
+    return false;
 }
 
 function setSidebarOpen(open, opts = {}) {
@@ -825,19 +826,12 @@ function createNote(fromModal = false) {
     };
     const notes = getNotes();
     if (isBoardViewActive) {
-        // בלוח: הפתק החדש מופיע במרכז המסך, ואם שם כבר יש פתק הוא זז קצת הצידה ולמטה
-        const container = document.getElementById('boardContainer');
+        // בלוח: הפתק החדש נכנס למשבצת פנויה בחלק של הלוח שרואים עכשיו, בלי לעלות על פתק אחר
         const noteW = 250, noteH = 250;
-        let cx = 50, cy = 50;
-        if (container) {
-            const r = container.getBoundingClientRect();
-            cx = Math.max(0, Math.round(window.innerWidth  / 2 - r.left - noteW / 2));
-            cy = Math.max(0, Math.round(window.innerHeight / 2 - r.top  - noteH / 2));
-        }
-        const taken = notes.filter(n => n.folder === note.folder).map(n => notePositions[n.id]).filter(Boolean);
-        for (let k = 0; k < 20 && taken.some(p => Math.abs(p.left - cx) < 24 && Math.abs(p.top - cy) < 24); k++) {
-            cx += 32; cy += 32;
-        }
+        const placed = notes.filter(n => n.folder === note.folder).map(n => notePositions[n.id]).filter(Boolean)
+            .map(p => ({ left: p.left, top: p.top, width: Math.max(p.width || 250, BOARD_MIN_W), height: Math.max(p.height || 250, BOARD_MIN_H) }));
+        const { pos } = findFreeBoardSlot(placed, noteW, noteH, boardVisibleArea());
+        const cx = pos.left, cy = pos.top;
         note.left = cx; note.top = cy;
         notePositions[note.id] = { left: cx, top: cy, width: noteW, height: noteH };
         localStorage.setItem('notePositions', JSON.stringify(notePositions));
@@ -852,6 +846,11 @@ function createNote(fromModal = false) {
     _justAddedNoteId = note.id;
     loadNotesWithoutFolderView();
     _justAddedNoteId = null;
+    if (isBoardViewActive) {
+        // אם המשבצת הפנויה מחוץ למסך, גוללים אליה כדי שיראו את הפתק החדש
+        const el = document.querySelector(`.board-note[data-id="${CSS.escape(note.id)}"]`);
+        if (el) el.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'smooth' });
+    }
 }
 
 function loadNotesWithoutFolderView() {
@@ -917,6 +916,40 @@ function loadNotesWithoutFolderView() {
 // מיקומי הפתקים בלוח. פתק בלי מיקום שמור, או שיושב בדיוק על פתק אחר (למשל כל הפתקים
 // שנוצרו ברשימה ונשמרו פעם ב-50,50), מקבל משבצת פנויה ברשת, והמיקום נשמר.
 const BOARD_CELL_W = 270, BOARD_CELL_H = 270, BOARD_PAD = 24;
+// החלק של הלוח שרואים עכשיו, בקואורדינטות של הלוח (הלוח רחב מהמסך, ותפריט הצד עלול לכסות את צד ימין)
+function boardVisibleArea() {
+    const board = document.getElementById('boardContainer');
+    if (!board) return { left: 0, right: window.innerWidth, top: 0, bottom: window.innerHeight };
+    const r = board.getBoundingClientRect();
+    const sidebar = document.getElementById('foldersSidebar');
+    const sideLeft = sidebar ? sidebar.getBoundingClientRect().left : window.innerWidth;
+    const visibleRight = Math.min(r.right, window.innerWidth, sideLeft > 0 ? sideLeft : window.innerWidth);
+    const visibleLeft = Math.max(r.left, 0);
+    return {
+        left: visibleLeft - r.left,
+        right: Math.max(visibleLeft - r.left + BOARD_CELL_W + BOARD_PAD, visibleRight - r.left),
+        top: Math.max(0, -r.top),
+        bottom: Math.max(0, -r.top) + window.innerHeight
+    };
+}
+
+const boardRectsOverlap = (a, b) => a.left < b.left + b.width && b.left < a.left + a.width && a.top < b.top + b.height && b.top < a.top + a.height;
+
+// המשבצת הפנויה הראשונה ברשת, מימין לשמאל ומלמעלה למטה, החל מראש האזור הנתון
+function findFreeBoardSlot(placed, w, h, area, fromSlot = 0) {
+    const cols = Math.max(1, Math.floor((area.right - area.left - BOARD_PAD) / BOARD_CELL_W));
+    for (let slot = fromSlot; slot < 5000; slot++) {
+        const col = slot % cols, row = Math.floor(slot / cols);
+        const c = {
+            left: Math.max(0, area.right - BOARD_PAD - 250 - col * BOARD_CELL_W),
+            top: area.top + BOARD_PAD + row * BOARD_CELL_H,
+            width: w, height: h
+        };
+        if (!placed.some(r => boardRectsOverlap(c, r))) return { pos: c, slot };
+    }
+    return { pos: { left: area.left + BOARD_PAD, top: area.top + BOARD_PAD, width: w, height: h }, slot: 0 };
+}
+
 function computeBoardPositions(notes) {
     const result = new Map();
     const placed = [];
@@ -931,34 +964,16 @@ function computeBoardPositions(notes) {
         }
     });
     if (!needPlace.length) return result;
-    // רוחב החלק של הלוח שרואים במסך (הלוח עצמו רחב יותר, ותפריט הצד מכסה את צד ימין)
-    const board = document.getElementById('boardContainer');
-    let boardW = window.innerWidth;
-    if (board) {
-        const r = board.getBoundingClientRect();
-        const sidebar = document.getElementById('foldersSidebar');
-        const sideLeft = sidebar ? sidebar.getBoundingClientRect().left : window.innerWidth;
-        const visibleRight = Math.min(r.right, window.innerWidth, sideLeft > 0 ? sideLeft : window.innerWidth);
-        boardW = visibleRight - r.left;
-    }
-    boardW = Math.max(BOARD_CELL_W + BOARD_PAD, boardW);
-    const cols = Math.max(1, Math.floor((boardW - BOARD_PAD) / BOARD_CELL_W));
-    const overlaps = (a, b) => a.left < b.left + b.width && b.left < a.left + a.width && a.top < b.top + b.height && b.top < a.top + a.height;
+    const area = { ...boardVisibleArea(), top: 0 };
     let slot = 0;
     needPlace.forEach(n => {
         const saved = notePositions[n.id];
         const w = (saved && saved.width) || 250, h = (saved && saved.height) || 250;
-        let pos = null;
-        for (; slot < 5000 && !pos; slot++) {
-            const col = slot % cols, row = Math.floor(slot / cols);
-            // מימין לשמאל, כמו כיוון הקריאה
-            const c = { left: Math.max(0, boardW - BOARD_PAD - 250 - col * BOARD_CELL_W), top: BOARD_PAD + row * BOARD_CELL_H, width: w, height: h };
-            if (!placed.some(r => overlaps(c, r))) pos = c;
-        }
-        if (!pos) pos = { left: BOARD_PAD, top: BOARD_PAD, width: w, height: h };
-        placed.push(pos);
-        result.set(n.id, pos);
-        notePositions[n.id] = pos;
+        const found = findFreeBoardSlot(placed, w, h, area, slot);
+        slot = found.slot;
+        placed.push(found.pos);
+        result.set(n.id, found.pos);
+        notePositions[n.id] = found.pos;
     });
     localStorage.setItem('notePositions', JSON.stringify(notePositions));
     return result;
@@ -2511,7 +2526,11 @@ function setupEventListeners() {
         sidebar.addEventListener('mouseleave', () => { if (window.matchMedia('(hover: hover)').matches) setSidebarOpen(false); });
     }
     const scrim = document.getElementById('sidebarScrim');
-    if (scrim) scrim.addEventListener('click', () => setSidebarOpen(false));
+    if (scrim) {
+        scrim.addEventListener('click', () => setSidebarOpen(false));
+        // במחשב: יציאה עם העכבר מהתפריט אל שאר הדף סוגרת אותו
+        scrim.addEventListener('mousemove', () => { if (window.matchMedia('(hover: hover)').matches) setSidebarOpen(false); });
+    }
 
     const closeSidebarBtn = document.getElementById('closeSidebarBtn');
     if (closeSidebarBtn && sidebar) {
