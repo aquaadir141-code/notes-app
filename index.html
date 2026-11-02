@@ -118,6 +118,24 @@
                 <input type="search" id="search-input" placeholder="חיפוש בפתקים" enterkeyhint="search" autocomplete="off">
                 <kbd aria-hidden="true">/</kbd>
             </div>
+            <div class="view-controls">
+                <div class="filter-chips" role="group" aria-label="סינון פתקים">
+                    <button type="button" class="chip-btn" data-filter="all" aria-pressed="true">הכל</button>
+                    <button type="button" class="chip-btn" data-filter="today" aria-pressed="false">היום</button>
+                    <button type="button" class="chip-btn" data-filter="overdue" aria-pressed="false">באיחור</button>
+                    <button type="button" class="chip-btn" data-filter="reminders" aria-pressed="false">עם תזכורת</button>
+                </div>
+                <label class="sort-control">
+                    <span>מיון</span>
+                    <select id="sortSelect" aria-label="מיון פתקים">
+                        <option value="newest">חדשים קודם</option>
+                        <option value="oldest">ישנים קודם</option>
+                        <option value="due">לפי מועד התזכורת</option>
+                        <option value="color">לפי צבע</option>
+                        <option value="alpha">לפי א-ב</option>
+                    </select>
+                </label>
+            </div>
             <section class="create-note" id="createNoteSection" aria-label="פתק חדש">
                 <label for="note-text" class="sr-only">תוכן הפתק</label>
                 <textarea id="note-text" placeholder="מה צריך לעשות?" rows="3"></textarea>
@@ -156,6 +174,7 @@
             </div>
             <button class="back-btn" id="backBtn" style="display: none;">חזור</button>
         </main>
+        <button class="fab fab-add" id="addFab" type="button" aria-label="פתק חדש" title="פתק חדש"></button>
 
         <!-- תצוגת לוח -->
         <div class="board-view" id="boardView" style="display: none;">

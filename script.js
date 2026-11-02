@@ -292,11 +292,79 @@ function composeTargetFolder() {
     return canComposeIn(selectedFolder) ? selectedFolder : 'תיקייה כללית';
 }
 
-// הצבע שפתק מקבל כשהוא עובר לתיקייה
+// הצבע שפתק מקבל כשהוא עובר לתיקייה: הפתק שומר על הצבע שלו (צבע התיקייה מוצג כפס בצד), רק באשפה הוא אפור
 function colorForFolder(note, target) {
     if (target === 'אשפה') return folderColors['אשפה'] || '#bdc3c7';
-    if (folderColors[target]) return folderColors[target];
-    return note.customColor || 'green';
+    return note.customColor || (note.color !== (folderColors['אשפה'] || '#bdc3c7') ? note.color : null) || 'green';
+}
+
+// --- סינון, מיון והתקדמות ---
+const FILTERS = ['all', 'today', 'overdue', 'reminders'];
+const SORTS = ['newest', 'oldest', 'due', 'color', 'alpha'];
+let activeFilter = FILTERS.includes(localStorage.getItem('noteFilter')) ? localStorage.getItem('noteFilter') : 'all';
+let activeSort = SORTS.includes(localStorage.getItem('noteSort')) ? localStorage.getItem('noteSort') : 'newest';
+
+function isOpenTask(n) {
+    return !n.completed && n.folder !== 'אשפה' && n.folder !== 'משימות שהושלמו';
+}
+function dueMsOf(n) {
+    const t = n && n.dueTime ? new Date(n.dueTime).getTime() : NaN;
+    return isNaN(t) ? null : t;
+}
+function noteMatchesFilter(n) {
+    if (activeFilter === 'all') return true;
+    if (!isOpenTask(n)) return false;
+    const due = dueMsOf(n);
+    if (due === null) return false;
+    if (activeFilter === 'reminders') return true;
+    if (activeFilter === 'overdue') return due < Date.now();
+    // היום: מה שמתוכנן להיום ומה שכבר באיחור
+    return startOfDay(due) <= startOfDay(new Date());
+}
+function compareNotes(a, b) {
+    const pin = Number(b.pinned || 0) - Number(a.pinned || 0);
+    if (pin) return pin;
+    const created = n => { const t = new Date(n.created).getTime(); return isNaN(t) ? 0 : t; };
+    switch (activeSort) {
+        case 'oldest': return created(a) - created(b);
+        case 'due': {
+            const da = dueMsOf(a), db = dueMsOf(b);
+            if (da === null && db === null) return created(b) - created(a);
+            if (da === null) return 1;
+            if (db === null) return -1;
+            return da - db;
+        }
+        case 'color': {
+            const idx = n => { const i = validColors.indexOf(n.color); return i === -1 ? validColors.length : i; };
+            return idx(a) - idx(b) || created(b) - created(a);
+        }
+        case 'alpha': return String(a.text || '').localeCompare(String(b.text || ''), 'he');
+        default: return created(b) - created(a);
+    }
+}
+function startOfWeek(d = new Date()) {
+    const x = new Date(d);
+    x.setHours(0, 0, 0, 0);
+    x.setDate(x.getDate() - x.getDay()); // השבוע מתחיל ביום ראשון
+    return x.getTime();
+}
+function syncViewControls() {
+    document.querySelectorAll('.filter-chips [data-filter]').forEach(b => b.setAttribute('aria-pressed', b.dataset.filter === activeFilter ? 'true' : 'false'));
+    const sel = document.getElementById('sortSelect');
+    if (sel) sel.value = activeSort;
+}
+
+// --- חזרה של תזכורת ---
+const REPEAT_LABELS = { daily: 'כל יום', weekly: 'כל שבוע', monthly: 'כל חודש' };
+function nextOccurrence(value, repeat, after = Date.now()) {
+    const d = new Date(value);
+    if (isNaN(d) || !REPEAT_LABELS[repeat]) return null;
+    for (let i = 0; i < 5000 && d.getTime() <= after; i++) {
+        if (repeat === 'daily') d.setDate(d.getDate() + 1);
+        else if (repeat === 'weekly') d.setDate(d.getDate() + 7);
+        else d.setMonth(d.getMonth() + 1);
+    }
+    return d;
 }
 
 // התיקייה שפתק חוזר אליה כשמבטלים "הושלם": התיקייה שהיה בה, אם היא עוד קיימת
@@ -321,6 +389,9 @@ let alertSound = new Audio(SOUND_FILES[currentSoundKey]);
 // --- 4. סט אייקונים (SVG) ---
 
 const ICONS = {
+    checklist: `<svg aria-hidden="true" focusable="false" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" style="fill:none;stroke:currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 8 8 4"></polyline><polyline points="3 14 5 16 8 12"></polyline><line x1="12" y1="6" x2="21" y2="6"></line><line x1="12" y1="14" x2="21" y2="14"></line><line x1="12" y1="20" x2="21" y2="20"></line></svg>`,
+    more: `<svg aria-hidden="true" focusable="false" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" stroke="none"><circle cx="5" cy="12" r="1.8"></circle><circle cx="12" cy="12" r="1.8"></circle><circle cx="19" cy="12" r="1.8"></circle></svg>`,
+    repeat: `<svg aria-hidden="true" focusable="false" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" style="fill:none;stroke:currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="17 1 21 5 17 9"></polyline><path d="M3 11V9a4 4 0 0 1 4-4h14"></path><polyline points="7 23 3 19 7 15"></polyline><path d="M21 13v2a4 4 0 0 1-4 4H3"></path></svg>`,
     // הוחלף גלגל שיניים לתו מוזיקה
     settings: `<svg aria-hidden="true" focusable="false" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" style="fill:none;stroke:currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5l12-2v13"></path><circle cx="6" cy="18" r="3"></circle><circle cx="18" cy="16" r="3"></circle></svg>`,
     pin: `<svg aria-hidden="true" focusable="false" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" style="fill:none;stroke:currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="17" x2="12" y2="22"></line><path d="M5 17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4h1v4.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24Z"></path></svg>`,
@@ -565,7 +636,7 @@ function loadFolders() {
         div.tabIndex = 0;
         if (selectedFolder === folder) { div.classList.add('selected'); div.setAttribute('aria-current', 'true'); }
         const safe = escapeHTML(folder);
-        const deleteBtnHTML = isFixed ? '' : `<button class="delete-folder-btn" aria-label="מחק את התיקייה ${safe}" title="מחק תיקייה">${ICONS.x}</button>`;
+        const deleteBtnHTML = isFixed ? '' : `<button class="delete-folder-btn rename-folder-btn" aria-label="שנה שם לתיקייה ${safe}" title="שינוי שם">${ICONS.edit}</button><button class="delete-folder-btn" data-action="delete" aria-label="מחק את התיקייה ${safe}" title="מחק תיקייה">${ICONS.x}</button>`;
         div.innerHTML = `
             <span class="folder-icon">${folderIconFor(folder)}</span>
             <span class="folder-name">${safe}</span>
@@ -601,8 +672,11 @@ function loadFolders() {
             }
         });
         if (!isFixed) {
-            const delBtn = div.querySelector('.delete-folder-btn');
+            const delBtn = div.querySelector('.delete-folder-btn[data-action="delete"]');
             if(delBtn) delBtn.onclick = (e) => { e.stopPropagation(); deleteFolder(folder); };
+            const renameBtn = div.querySelector('.rename-folder-btn');
+            if(renameBtn) renameBtn.onclick = (e) => { e.stopPropagation(); renameFolder(folder); };
+            div.querySelector('.folder-name').addEventListener('dblclick', (e) => { e.stopPropagation(); renameFolder(folder); });
         }
         input.addEventListener('change', (e) => { updateFolderColor(folder, e.target.value); });
         preview.onclick = (e) => { e.stopPropagation(); input.click(); };
@@ -636,10 +710,7 @@ function loadFolders() {
 function updateFolderColor(folder, color) {
     folderColors[folder] = color;
     localStorage.setItem('folderColors', JSON.stringify(folderColors));
-    let notes = getNotes();
-    let updated = false;
-    notes.forEach(note => { if (note.folder === folder) { note.color = color; updated = true; } });
-    if (updated) localStorage.setItem('notes', JSON.stringify(notes));
+    // הפתקים שומרים על הצבע שלהם; צבע התיקייה מוצג כפס בצד הפתק
     loadFolders();
     loadNotesWithoutFolderView();
 }
@@ -668,6 +739,42 @@ function selectFolder(folder) {
         if (container) container.classList.add('active');
         window.scrollTo({ top: 0 });
     }
+}
+
+function renameFolder(oldName) {
+    showPrompt({
+        title: 'שינוי שם לתיקייה',
+        label: 'שם חדש (עד 15 תווים)',
+        maxLength: 15,
+        value: oldName,
+        confirmText: 'שמירה'
+    }, (raw) => {
+        const name = (raw || '').trim();
+        if (!name) { showToast('נא לכתוב שם לתיקייה'); return false; }
+        if (name === oldName) return;
+        const folders = getFolders();
+        if (folders.includes(name) || fixedFolders.includes(name)) { showToast('תיקייה בשם זה כבר קיימת'); return false; }
+        const i = folders.indexOf(oldName);
+        if (i === -1) return;
+        folders[i] = name;
+        localStorage.setItem('folders', JSON.stringify(folders));
+        const notes = getNotes();
+        notes.forEach(n => {
+            if (n.folder === oldName) n.folder = name;
+            if (n.prevFolder === oldName) n.prevFolder = name;
+        });
+        localStorage.setItem('notes', JSON.stringify(notes));
+        if (folderColors[oldName]) {
+            folderColors[name] = folderColors[oldName];
+            delete folderColors[oldName];
+            localStorage.setItem('folderColors', JSON.stringify(folderColors));
+        }
+        if (selectedFolder === oldName) selectedFolder = name;
+        loadFolders();
+        if (isFolderViewActive && selectedFolder === name) selectFolder(name);
+        else loadNotesWithoutFolderView();
+        showToast(`השם שונה ל"${name}"`);
+    });
 }
 
 function deleteFolder(folder) {
@@ -752,8 +859,10 @@ function loadNotesWithoutFolderView() {
     const board = document.getElementById('boardContainer');
     if (board) board.innerHTML = '';
 
-    // מיון לפי נעיצה
-    notes.sort((a, b) => Number(b.pinned || 0) - Number(a.pinned || 0));
+    // נעוצים קודם, ואחר כך לפי המיון שנבחר; פתקים שלא מתאימים לסינון לא מוצגים
+    notes.sort(compareNotes);
+    // הסינון שייך לתצוגת הרשימה (בלוח אין כפתורי סינון)
+    if (!isBoardViewActive) notes = notes.filter(noteMatchesFilter);
 
     const existingTrashBtn = document.getElementById('floatingTrashBtn');
     if (existingTrashBtn) existingTrashBtn.remove();
@@ -897,6 +1006,9 @@ function updateSubtitle() {
     const date = new Date().toLocaleDateString('he-IL', { weekday: 'long', day: 'numeric', month: 'long' });
     let text = `${date} · ${open.length === 0 ? 'אין משימות פתוחות' : open.length === 1 ? 'משימה פתוחה אחת' : open.length + ' משימות פתוחות'}`;
     if (overdue) text += ` · ${overdue} באיחור`;
+    const weekStart = startOfWeek();
+    const doneThisWeek = getNotes().filter(n => n.completed && n.folder !== 'אשפה' && n.completedAt && new Date(n.completedAt).getTime() >= weekStart).length;
+    if (doneThisWeek) text += ` · ${doneThisWeek === 1 ? 'משימה אחת הושלמה' : doneThisWeek + ' הושלמו'} השבוע`;
     if (el.textContent !== text) el.textContent = text;
 }
 
@@ -958,15 +1070,90 @@ function moveNoteToFolder(note, target) {
     if (target === 'משימות שהושלמו' && !note.completed) {
         if (canComposeIn(note.folder)) note.prevFolder = note.folder;
         note.completed = true;
+        note.completedAt = new Date().toISOString();
     } else if (canComposeIn(target)) {
         note.completed = false;
         delete note.prevFolder;
+        delete note.completedAt;
     }
     note.folder = target;
     note.color = colorForFolder(note, target);
     updateNoteInStorage(note);
     loadNotesWithoutFolderView();
     showToast(`הועבר אל "${target}"`);
+}
+
+// תתי-משימות בתוך פתק: רשימת ✓ שנשמרת ב-note.checklist
+function setupChecklist(div, note) {
+    const list = div.querySelector('.note-checklist');
+    const chip = div.querySelector('.meta-chip.is-progress');
+    const newId = () => (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2);
+    const items = () => (Array.isArray(note.checklist) ? note.checklist : (note.checklist = []));
+
+    const save = () => {
+        if (!items().length) delete note.checklist;
+        updateNoteInStorage(note);
+        updateProgress();
+    };
+    const updateProgress = () => {
+        const all = Array.isArray(note.checklist) ? note.checklist : [];
+        list.hidden = !all.length;
+        if (!all.length) { chip.hidden = true; return; }
+        const done = all.filter(i => i.done).length;
+        chip.hidden = false;
+        chip.textContent = `${done}/${all.length} תתי-משימות`;
+        chip.classList.toggle('is-complete', done === all.length);
+    };
+    const focusItem = (id, atEnd = true) => {
+        const input = list.querySelector(`li[data-id="${CSS.escape(id)}"] .check-text`);
+        if (!input) return;
+        input.focus();
+        if (atEnd) { const l = input.value.length; input.setSelectionRange(l, l); }
+    };
+    const addItem = (afterId) => {
+        const arr = items();
+        const item = { id: newId(), text: '', done: false };
+        const i = afterId ? arr.findIndex(x => x.id === afterId) : -1;
+        if (i === -1) arr.push(item); else arr.splice(i + 1, 0, item);
+        render();
+        save();
+        focusItem(item.id);
+    };
+    const removeItem = (id, focusPrev) => {
+        const arr = items();
+        const i = arr.findIndex(x => x.id === id);
+        if (i === -1) return;
+        arr.splice(i, 1);
+        render();
+        save();
+        if (focusPrev && arr[i - 1]) focusItem(arr[i - 1].id);
+    };
+    function render() {
+        list.innerHTML = '';
+        items().forEach(item => {
+            const li = document.createElement('li');
+            li.className = 'check-item' + (item.done ? ' done' : '');
+            li.dataset.id = item.id;
+            li.innerHTML = `<input type="checkbox" class="check-box" aria-label="סמן תת-משימה כבוצעה"><input type="text" class="check-text" maxlength="200" placeholder="תת-משימה" aria-label="תת-משימה"><button type="button" class="check-remove" title="מחק" aria-label="מחק תת-משימה">${ICONS.x}</button>`;
+            const box = li.querySelector('.check-box');
+            const text = li.querySelector('.check-text');
+            box.checked = !!item.done;
+            text.value = item.text || '';
+            box.onchange = () => { item.done = box.checked; li.classList.toggle('done', item.done); save(); };
+            text.oninput = () => { item.text = text.value; updateNoteInStorage(note); };
+            text.onkeydown = (e) => {
+                if (e.key === 'Enter') { e.preventDefault(); addItem(item.id); }
+                else if (e.key === 'Backspace' && !text.value) { e.preventDefault(); removeItem(item.id, true); }
+                else if (e.key === 'Escape') { text.blur(); }
+            };
+            text.onblur = () => { setTimeout(() => { if (!item.text.trim() && document.activeElement !== text && items().includes(item)) removeItem(item.id); }, 150); };
+            li.querySelector('.check-remove').onclick = (e) => { e.stopPropagation(); removeItem(item.id); };
+            list.appendChild(li);
+        });
+        updateProgress();
+    }
+    div._addChecklistItem = () => addItem();
+    render();
 }
 
 function createNoteElement(note, isDarkMode) {
@@ -977,6 +1164,10 @@ function createNoteElement(note, isDarkMode) {
     if (!validColors.includes(note.color) && note.color) div.style.setProperty('--tint', note.color);
     if (note.completed) div.classList.add('completed');
     if (note.notified) div.classList.add('notified');
+    if (folderColors[note.folder] && note.folder !== 'אשפה') {
+        div.classList.add('has-folder-color');
+        div.style.setProperty('--folder-stripe', folderColors[note.folder]);
+    }
 
     const created = new Date(note.created);
     const createdFull = isNaN(created) ? '' : created.toLocaleString('he-IL', { dateStyle: 'full', timeStyle: 'short' });
@@ -994,6 +1185,7 @@ function createNoteElement(note, isDarkMode) {
     div.innerHTML = `
         <div class="note-header">
             <button class="complete-btn ${note.completed ? 'active' : ''}" aria-pressed="${note.completed ? 'true' : 'false'}" title="${note.completed ? 'לחץ לביטול הסימון' : 'סמן כהושלם'}" aria-label="${note.completed ? 'בטל סימון הושלם' : 'סמן כהושלם'}">${ICONS.check}</button>
+            <button class="more-btn" aria-expanded="false" title="פעולות" aria-label="הצג פעולות לפתק">${ICONS.more}</button>
             <div class="note-actions">
                 <button class="pin-btn ${note.pinned ? 'active' : ''}" aria-pressed="${note.pinned ? 'true' : 'false'}" title="${note.pinned ? 'בטל נעיצה' : 'נעץ למעלה'}" aria-label="${note.pinned ? 'בטל נעיצה' : 'נעץ למעלה'}">${ICONS.pin}</button>
                 <button class="edit-btn" aria-pressed="false" title="ערוך" aria-label="ערוך פתק">${ICONS.edit}</button>
@@ -1012,6 +1204,7 @@ function createNoteElement(note, isDarkMode) {
             <button data-cmd="bold" title="מודגש" aria-label="מודגש">${ICONS.bold}</button>
             <button data-cmd="italic" title="נטוי" aria-label="נטוי">${ICONS.italic}</button>
             <button data-cmd="underline" title="קו תחתון" aria-label="קו תחתון">${ICONS.underline}</button>
+            <button data-cmd="checklist" title="הוסף תת-משימה" aria-label="הוסף תת-משימה">${ICONS.checklist}</button>
             <span class="toolbar-sep" aria-hidden="true"></span>
             <button data-cmd="increaseFontSize" title="הגדל טקסט" aria-label="הגדל טקסט">${ICONS.zoomIn}</button>
             <button data-cmd="decreaseFontSize" title="הקטן טקסט" aria-label="הקטן טקסט">${ICONS.zoomOut}</button>
@@ -1021,8 +1214,11 @@ function createNoteElement(note, isDarkMode) {
             </div>
         </div>
         <div class="note-content" contenteditable="false"></div>
+        <ul class="note-checklist" aria-label="תתי-משימות"></ul>
         <div class="note-meta">
-            ${dueTimeDisplay ? `<span class="meta-chip ${isOverdue ? 'is-overdue' : 'is-due'}" title="${isOverdue ? 'באיחור' : 'זמן ביצוע'}">${ICONS.alarm}${isOverdue ? 'באיחור · ' : ''}${escapeHTML(dueTimeDisplay)}</span>` : ''}
+            ${dueTimeDisplay ? `<span class="meta-chip ${isOverdue ? 'is-overdue' : 'is-due'}" title="${isOverdue ? 'באיחור' : 'זמן ביצוע'}">${ICONS.alarm}${isOverdue ? 'באיחור · ' : ''}${escapeHTML(dueTimeDisplay)}${REPEAT_LABELS[note.repeat] ? ` · ${REPEAT_LABELS[note.repeat]}` : ''}</span>` : ''}
+            ${note.snoozeUntil ? `<span class="meta-chip is-due" title="נודניק">${ICONS.clock}נודניק · ${escapeHTML(formatDue(note.snoozeUntil))}</span>` : ''}
+            <span class="meta-chip is-progress" hidden></span>
             <span class="meta-chip is-plain" title="נוצר ${escapeHTML(createdFull)}">${escapeHTML(formatRelative(note.created))}</span>
         </div>
         ${isBoardViewActive ? `<div class="resize-handle-bottom-right" aria-hidden="true"></div>` : ''}
@@ -1030,6 +1226,25 @@ function createNoteElement(note, isDarkMode) {
 
     const content = div.querySelector('.note-content');
     if (note.textColor) content.style.color = note.textColor;
+    setupChecklist(div, note);
+
+    // נייד: הפעולות מוסתרות עד שנוגעים בפתק, כדי שכל כרטיס יתפוס פחות מקום
+    const moreBtn = div.querySelector('.more-btn');
+    const toggleActions = (open) => {
+        document.querySelectorAll('.note.show-actions').forEach(n => {
+            if (n === div) return;
+            n.classList.remove('show-actions');
+            const b = n.querySelector('.more-btn'); if (b) b.setAttribute('aria-expanded', 'false');
+        });
+        div.classList.toggle('show-actions', open);
+        moreBtn.setAttribute('aria-expanded', open ? 'true' : 'false');
+    };
+    moreBtn.onclick = (e) => { e.stopPropagation(); toggleActions(!div.classList.contains('show-actions')); };
+    div.addEventListener('click', (e) => {
+        if (!window.matchMedia('(max-width: 600px)').matches) return;
+        if (e.target.closest('button, input, a, .menu, [contenteditable="true"], .note-checklist')) return;
+        toggleActions(!div.classList.contains('show-actions'));
+    });
     const colorPreview = div.querySelector('.note-text-color-preview');
     if (note.textColor) colorPreview.style.color = note.textColor;
 
@@ -1039,7 +1254,7 @@ function createNoteElement(note, isDarkMode) {
     };
     const completeBtn = div.querySelector('.complete-btn');
     completeBtn.onclick = () => {
-        const before = { completed: note.completed, folder: note.folder, color: note.color, prevFolder: note.prevFolder };
+        const before = { completed: note.completed, folder: note.folder, color: note.color, prevFolder: note.prevFolder, completedAt: note.completedAt };
         const undo = {
             label: 'ביטול',
             onClick: () => {
@@ -1048,6 +1263,7 @@ function createNoteElement(note, isDarkMode) {
                 if (!n) return;
                 Object.assign(n, before);
                 if (before.prevFolder === undefined) delete n.prevFolder;
+                if (before.completedAt === undefined) delete n.completedAt;
                 localStorage.setItem('notes', JSON.stringify(all));
                 loadNotesWithoutFolderView();
             }
@@ -1058,6 +1274,7 @@ function createNoteElement(note, isDarkMode) {
             note.folder = target;
             note.color = colorForFolder(note, target);
             delete note.prevFolder;
+            delete note.completedAt;
             completeBtn.setAttribute('aria-pressed', 'false');
             completeBtn.setAttribute('aria-label', 'סמן כהושלם');
             completeBtn.title = 'סמן כהושלם';
@@ -1067,6 +1284,7 @@ function createNoteElement(note, isDarkMode) {
             // זוכרים מאיזו תיקייה הפתק הגיע, כדי להחזיר אותו לשם אם מבטלים
             if (canComposeIn(note.folder)) note.prevFolder = note.folder;
             note.completed = true;
+            note.completedAt = new Date().toISOString();
             note.folder = 'משימות שהושלמו';
             completeBtn.setAttribute('aria-pressed', 'true');
             completeBtn.setAttribute('aria-label', 'בטל סימון הושלם');
@@ -1080,10 +1298,12 @@ function createNoteElement(note, isDarkMode) {
     };
     div.querySelector('.pin-btn').onclick = () => togglePin(note.id);
     div.querySelector('.extend-btn').onclick = () => {
-        openDateModal(note.dueTime, (newTime) => {
+        openDateModal(note.dueTime, (newTime, repeat) => {
             if (newTime) {
                 note.dueTime = newTime;
                 note.notified = false;
+                delete note.snoozeUntil;
+                if (REPEAT_LABELS[repeat]) note.repeat = repeat; else delete note.repeat;
                 // תזכורת חדשה לפתק שהושלם: הוא חוזר להיות משימה פתוחה, בתיקייה שהיה בה
                 if (note.completed || note.folder === 'משימות שהושלמו') {
                     note.completed = false;
@@ -1095,15 +1315,17 @@ function createNoteElement(note, isDarkMode) {
                 }
                 updateNoteInStorage(note);
                 loadNotesWithoutFolderView();
-                showToast('התזכורת נשמרה · ' + formatDue(newTime));
+                showToast('התזכורת נשמרה · ' + formatDue(newTime) + (note.repeat ? ' · ' + REPEAT_LABELS[note.repeat] : ''));
             } else if (note.dueTime) {
                 note.dueTime = '';
                 note.notified = false;
+                delete note.repeat;
+                delete note.snoozeUntil;
                 updateNoteInStorage(note);
                 loadNotesWithoutFolderView();
                 showToast('התזכורת הוסרה');
             }
-        });
+        }, note.repeat);
     };
 
     const editBtn = div.querySelector('.edit-btn');
@@ -1149,6 +1371,7 @@ function createNoteElement(note, isDarkMode) {
         btn.onmousedown = (e) => e.preventDefault(); // שומר על הבחירה בטקסט
         btn.onclick = (e) => {
             e.preventDefault(); const cmd = btn.dataset.cmd;
+            if (cmd === 'checklist') { div._addChecklistItem(); return; }
             if (cmd === 'increaseFontSize') document.execCommand('fontSize', false, '4');
             else if (cmd === 'decreaseFontSize') document.execCommand('fontSize', false, '2');
             else document.execCommand(cmd, false, null);
@@ -1305,6 +1528,8 @@ function showGuideModal() {
             <li><span class="inline-icon">${ICONS.folder}</span><span><strong>תיקיות:</strong> העבר פתקים לתיקיות אישיות וצבעוניות.</span></li>
             <li><span class="inline-icon">${ICONS.edit}</span><span><strong>עריכה:</strong> לחץ על העיפרון לעריכת טקסט, הדגשה וצבע.</span></li>
             <li><span class="inline-icon">${ICONS.clock}</span><span><strong>תזכורות:</strong> קבע זמן וקבל התראה עם צליל לבחירתך.</span></li>
+            <li><span class="inline-icon">${ICONS.checklist}</span><span><strong>תתי-משימות:</strong> בעריכת פתק, כפתור הרשימה מוסיף צעדים לסימון.</span></li>
+            <li><span class="inline-icon">${ICONS.list}</span><span><strong>סינון ומיון:</strong> "היום" מציג את מה שצריך לעשות היום ומה שבאיחור, מכל התיקיות.</span></li>
             <li><span class="inline-icon">${ICONS.delete}</span><span><strong>אשפה:</strong> פתקים שנמחקים נשמרים באשפה עד שתרוקן אותה.</span></li>
         </ul>
         <div class="guide-shortcuts" aria-label="קיצורי מקלדת">
@@ -1350,14 +1575,17 @@ function searchNotes() {
     const raw = (isBoardViewActive ? (val2 || val1) : (val1 || val2)).trim();
     const term = raw.toLowerCase();
     document.querySelectorAll('.note').forEach(note => {
-        const text = (note.querySelector('.note-content') || note).innerText.toLowerCase();
+        const subtasks = [...note.querySelectorAll('.check-text')].map(i => i.value).join(' ');
+        const text = ((note.querySelector('.note-content') || note).innerText + ' ' + subtasks).toLowerCase();
         note.style.display = text.includes(term) ? 'flex' : 'none';
     });
     document.querySelectorAll('.no-results').forEach(m => m.remove());
-    document.querySelectorAll('.notes-container .empty-state').forEach(e => { e.style.display = term ? 'none' : ''; });
+    const filtering = activeFilter !== 'all' && !isBoardViewActive;
+    const narrowing = !!term || filtering;
+    document.querySelectorAll('.notes-container .empty-state').forEach(e => { e.style.display = narrowing ? 'none' : ''; });
 
-    // במסך הראשי החיפוש עובר על כל התיקיות: כל תיקייה שיש בה תוצאה מוצגת עם הכותרת שלה
-    const globalSearch = !!term && !isBoardViewActive && !isFolderViewActive;
+    // במסך הראשי חיפוש וסינון עוברים על כל התיקיות: כל תיקייה שיש בה תוצאה מוצגת עם הכותרת שלה
+    const globalSearch = narrowing && !isBoardViewActive && !isFolderViewActive;
     const visible = n => n.style.display !== 'none';
     let anyHit = false;
     document.querySelectorAll('.folder-container').forEach(fc => {
@@ -1366,7 +1594,7 @@ function searchNotes() {
         fc.classList.toggle('search-match', hit);
     });
     document.body.classList.toggle('is-searching', globalSearch);
-    if (!term || isBoardViewActive) return;
+    if (!narrowing || isBoardViewActive) return;
     if (globalSearch ? anyHit : [...document.querySelectorAll('.folder-container.active .note')].some(visible)) return;
 
     // אין תוצאות: הודעה אחת בתיקייה שמוצגת
@@ -1377,7 +1605,11 @@ function searchNotes() {
     if (!target) return;
     const msg = document.createElement('p');
     msg.className = 'no-results';
-    msg.textContent = globalSearch ? `לא נמצאו פתקים עבור "${raw}"` : `לא נמצאו פתקים עבור "${raw}" בתיקייה "${selectedFolder}"`;
+    const filterName = { today: 'להיום', overdue: 'באיחור', reminders: 'עם תזכורת' }[activeFilter];
+    const where = globalSearch ? '' : ` בתיקייה "${selectedFolder}"`;
+    msg.textContent = term
+        ? `לא נמצאו פתקים עבור "${raw}"${filtering ? ` (בסינון "${filterName}")` : ''}${where}`
+        : `אין פתקים ${filterName}${where}`;
     target.appendChild(msg);
 }
 
@@ -1651,29 +1883,72 @@ async function autoBackupIfTime() {
     });
 }
 
+// שחזור מקובץ: בודקים שהקובץ הוא גיבוי, ושואלים אם למזג או להחליף
 function restoreNotes(event) {
     const file = event.target.files[0];
     if (!file) return;
     const reader = new FileReader();
     reader.onload = function(e) {
+        let data;
         try {
-            const data = JSON.parse(e.target.result);
-            if (data.notes) localStorage.setItem('notes', JSON.stringify(data.notes));
-            if (data.folders) localStorage.setItem('folders', JSON.stringify(data.folders));
-            if (data.folderColors) localStorage.setItem('folderColors', JSON.stringify(data.folderColors));
-            if (data.notePositions) localStorage.setItem('notePositions', JSON.stringify(data.notePositions));
-            folderColors = data.folderColors || {};
-            notePositions = data.notePositions || {};
-            repairStoredData();
-            loadFolders();
-            loadNotesWithoutFolderView();
-            showAlert('שוחזר בהצלחה! 🎉');
+            data = JSON.parse(e.target.result);
         } catch (err) {
             showAlert('שגיאה בקובץ הגיבוי. ודא שהקובץ תקין.');
+            return;
         }
+        if (!data || !Array.isArray(data.notes) || !data.notes.every(n => n && typeof n === 'object')) {
+            showAlert('הקובץ הזה הוא לא גיבוי של הפתקים. לא שיניתי כלום.');
+            return;
+        }
+        const current = getNotes();
+        const ids = new Set(current.map(n => n.id));
+        const newCount = data.notes.filter(n => !ids.has(n.id)).length;
+        const d = createDialog({
+            title: 'שחזור מגיבוי',
+            icon: 'folder',
+            message: `בגיבוי יש ${data.notes.length === 1 ? 'פתק אחד' : data.notes.length + ' פתקים'}, ${newCount === 0 ? 'כולם כבר נמצאים כאן' : newCount === 1 ? 'אחד מהם לא נמצא כאן עכשיו' : newCount + ' מהם לא נמצאים כאן עכשיו'}.\nמיזוג מוסיף את מה שחסר ולא נוגע בפתקים הקיימים. החלפה מוחקת את כל הפתקים הנוכחיים ושמה במקומם את הגיבוי.`
+        });
+        d.addButton('ביטול', 'secondary', () => d.close());
+        d.addButton('החלפה', 'secondary', () => {
+            d.close();
+            showConfirm(`${current.length} הפתקים הנוכחיים יימחקו ויוחלפו ב-${data.notes.length} הפתקים שבגיבוי.`, () => applyRestore(data, 'replace'), null, { title: 'להחליף את כל הפתקים?', confirmText: 'החלף' });
+        });
+        d.addButton('מיזוג', 'primary', () => { d.close(); applyRestore(data, 'merge'); }).focus();
     };
     reader.readAsText(file);
     event.target.value = '';
+}
+
+function applyRestore(data, mode) {
+    const backupFolders = Array.isArray(data.folders) ? data.folders : [];
+    const backupColors = data.folderColors && typeof data.folderColors === 'object' ? data.folderColors : {};
+    const backupPositions = data.notePositions && typeof data.notePositions === 'object' ? data.notePositions : {};
+    let added = data.notes.length;
+    if (mode === 'merge') {
+        const notes = getNotes();
+        const ids = new Set(notes.map(n => n.id));
+        const extra = data.notes.filter(n => !ids.has(n.id));
+        added = extra.length;
+        localStorage.setItem('notes', JSON.stringify([...notes, ...extra]));
+        const folders = getFolders();
+        backupFolders.forEach(f => { const name = folderNameOf(f); if (name && !folders.includes(name) && !fixedFolders.includes(name)) folders.push(name); });
+        localStorage.setItem('folders', JSON.stringify(folders));
+        folderColors = { ...backupColors, ...folderColors };
+        notePositions = { ...backupPositions, ...notePositions };
+    } else {
+        localStorage.setItem('notes', JSON.stringify(data.notes));
+        localStorage.setItem('folders', JSON.stringify(backupFolders));
+        folderColors = { ...backupColors };
+        notePositions = { ...backupPositions };
+    }
+    localStorage.setItem('folderColors', JSON.stringify(folderColors));
+    localStorage.setItem('notePositions', JSON.stringify(notePositions));
+    repairStoredData();
+    loadFolders();
+    loadNotesWithoutFolderView();
+    showAlert(mode === 'merge'
+        ? (added ? (added === 1 ? 'נוסף פתק אחד מהגיבוי 🎉' : `נוספו ${added} פתקים מהגיבוי 🎉`) : 'כל הפתקים שבגיבוי כבר נמצאים כאן.')
+        : (added === 1 ? 'שוחזר פתק אחד מהגיבוי 🎉' : `שוחזרו ${added} פתקים מהגיבוי 🎉`));
 }
 
 function setupDragAndResize(el) {
@@ -1846,18 +2121,25 @@ function checkDueTimes() {
     const due = [];
     notes.forEach(n => {
         // פתק באשפה או שהושלם לא מצלצל
-        if (n.dueTime && !n.completed && !n.notified && n.folder !== 'אשפה' && n.folder !== 'משימות שהושלמו') {
-            const dueMs = new Date(n.dueTime).getTime();
-            if (dueMs <= now) {
-                n.notified = true;
-                due.push(n);
-            }
+        if (!isOpenTask(n)) return;
+        let fire = false;
+        if (n.snoozeUntil && new Date(n.snoozeUntil).getTime() <= now) {
+            delete n.snoozeUntil;
+            fire = true;
         }
+        const dueMs = n.dueTime && !n.notified ? new Date(n.dueTime).getTime() : NaN;
+        if (!isNaN(dueMs) && dueMs <= now) {
+            fire = true;
+            // תזכורת חוזרת עוברת למועד הבא; רגילה מסומנת שכבר הוצגה
+            const next = REPEAT_LABELS[n.repeat] ? nextOccurrence(n.dueTime, n.repeat, now) : null;
+            if (next) n.dueTime = toLocalInputValue(next); else n.notified = true;
+        }
+        if (fire) due.push(n);
     });
     if (due.length) {
         localStorage.setItem('notes', JSON.stringify(notes));
         alertSound.play().catch(e => console.log('Audio blocked until interaction'));
-        due.forEach(n => { showCustomAlertModal(n.text); showDueNotification(n.text); });
+        due.forEach(n => { showCustomAlertModal(n.text, n.id); showDueNotification(n.text); });
         _rerenderAfterEdit = true;
     }
     // לא בונים את הרשימה מחדש באמצע עריכה, כדי לא לקטוע את ההקלדה
@@ -1873,11 +2155,12 @@ function checkDueTimes() {
 }
 
 // חלון "הזמן עבר!": כמה תזכורות שמגיעות יחד מוצגות באותו חלון, כל אחת בשורה משלה
-function showCustomAlertModal(text) {
+function showCustomAlertModal(text, noteId) {
     const existing = document.getElementById('custom-alert-overlay');
     if (existing && existing.dataset.state !== 'closed') {
         const body = existing.querySelector('.dialog-body');
         if (body) {
+            if (noteId && existing._noteIds) existing._noteIds.push(noteId);
             const quote = document.createElement('div');
             quote.className = 'dialog-quote';
             quote.textContent = text;
@@ -1898,18 +2181,38 @@ function showCustomAlertModal(text) {
     quote.className = 'dialog-quote';
     quote.textContent = text;
     d.body.appendChild(quote);
+    d.overlay._noteIds = noteId ? [noteId] : [];
+    d.addButton('נודניק 10 דק׳', 'secondary', () => {
+        const ids = d.overlay._noteIds;
+        const until = new Date(Date.now() + 10 * 60000).toISOString();
+        const all = getNotes();
+        all.forEach(n => { if (ids.includes(n.id)) n.snoozeUntil = until; });
+        localStorage.setItem('notes', JSON.stringify(all));
+        d.close();
+        _rerenderAfterEdit = true;
+        showToast('אזכיר שוב בעוד 10 דקות');
+    });
     d.addButton('הבנתי', 'primary', () => d.close()).focus();
 }
 
-function openDateModal(currentTime, callback) {
+function openDateModal(currentTime, callback, currentRepeat) {
     const d = createDialog({ title: 'מתי להזכיר?', icon: 'clock', message: 'בחר תאריך ושעה, או אחת מהאפשרויות המהירות.' });
     const inputId = 'date-modal-input-' + Date.now();
     d.body.innerHTML = `
         <div class="quick-times" role="group" aria-label="בחירה מהירה"></div>
         <label class="field-label" for="${inputId}">תאריך ושעה</label>
         <input type="datetime-local" id="${inputId}">
+        <label class="field-label" for="${inputId}-repeat">חזרה</label>
+        <select id="${inputId}-repeat" class="repeat-select">
+            <option value="">ללא</option>
+            <option value="daily">כל יום</option>
+            <option value="weekly">כל שבוע</option>
+            <option value="monthly">כל חודש</option>
+        </select>
     `;
     const input = d.body.querySelector('input');
+    const repeatSel = d.body.querySelector('select');
+    repeatSel.value = REPEAT_LABELS[currentRepeat] ? currentRepeat : '';
     if (currentTime) input.value = toLocalInputValue(currentTime);
     const quick = d.body.querySelector('.quick-times');
     const at = (fn) => { const t = new Date(); fn(t); return t; };
@@ -1932,9 +2235,9 @@ function openDateModal(currentTime, callback) {
         b.setAttribute('aria-pressed', 'false');
         quick.appendChild(b);
     });
-    if (currentTime) d.addButton('הסר תזכורת', 'secondary', () => { callback(''); d.close(); });
+    if (currentTime) d.addButton('הסר תזכורת', 'secondary', () => { callback('', ''); d.close(); });
     d.addButton('ביטול', 'secondary', () => d.close());
-    d.addButton('שמירה', 'primary', () => { callback(input.value); d.close(); });
+    d.addButton('שמירה', 'primary', () => { callback(input.value, repeatSel.value); d.close(); });
     setTimeout(() => (quick.querySelector('button') || input).focus(), 30);
 }
 
@@ -2007,6 +2310,36 @@ function setupEventListeners() {
     if(oldCloseBtn) oldCloseBtn.onclick = handleGuideClose;
 
     document.getElementById('search-input').oninput = searchNotes;
+
+    // סינון ומיון
+    document.querySelectorAll('.filter-chips [data-filter]').forEach(b => {
+        b.onclick = () => {
+            activeFilter = b.dataset.filter;
+            localStorage.setItem('noteFilter', activeFilter);
+            syncViewControls();
+            loadNotesWithoutFolderView();
+        };
+    });
+    const sortSel = document.getElementById('sortSelect');
+    if (sortSel) sortSel.onchange = () => {
+        activeSort = SORTS.includes(sortSel.value) ? sortSel.value : 'newest';
+        localStorage.setItem('noteSort', activeSort);
+        loadNotesWithoutFolderView();
+    };
+    syncViewControls();
+
+    // נייד: כפתור + צף שמוביל לתיבת הכתיבה
+    const addFab = document.getElementById('addFab');
+    if (addFab) {
+        addFab.innerHTML = ICONS.plus;
+        addFab.onclick = () => {
+            if (isFolderViewActive && !canComposeIn(selectedFolder)) showMainContent();
+            const field = document.getElementById('note-text');
+            if (!field) return;
+            field.scrollIntoView({ block: 'center', behavior: 'smooth' });
+            field.focus({ preventScroll: true });
+        };
+    }
     const boardSearch = document.getElementById('board-search-input');
     if(boardSearch) boardSearch.oninput = searchNotes;
 
