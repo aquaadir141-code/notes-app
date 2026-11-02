@@ -257,8 +257,23 @@ function showPrompt({ title, label, placeholder, maxLength, confirmText, value }
     d.body.querySelector('label').textContent = label || '';
     const input = d.body.querySelector('input');
     if (placeholder) input.placeholder = placeholder;
-    if (maxLength) input.maxLength = maxLength;
     if (value) input.value = value;
+    // No hard maxlength: it cut pasted or long names silently. A live counter shows the limit instead.
+    if (maxLength) {
+        const hint = document.createElement('div');
+        hint.className = 'field-hint';
+        hint.setAttribute('aria-live', 'polite');
+        d.body.appendChild(hint);
+        const update = () => {
+            const len = input.value.trim().length;
+            const over = len > maxLength;
+            hint.textContent = over ? `ארוך מדי: ${len}/${maxLength} תווים` : `${len}/${maxLength}`;
+            hint.classList.toggle('is-error', over);
+            input.setAttribute('aria-invalid', over ? 'true' : 'false');
+        };
+        input.addEventListener('input', update);
+        update();
+    }
     d.addButton('ביטול', 'secondary', () => d.close());
     const ok = d.addButton(confirmText || 'שמירה', 'primary', submit);
     function submit() {
@@ -391,6 +406,7 @@ let alertSound = new Audio(SOUND_FILES[currentSoundKey]);
 // --- 4. סט אייקונים (SVG) ---
 
 const ICONS = {
+    restore: `<svg aria-hidden="true" focusable="false" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" style="fill:none;stroke:currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"></polyline><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"></path></svg>`,
     checklist: `<svg aria-hidden="true" focusable="false" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" style="fill:none;stroke:currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 8 8 4"></polyline><polyline points="3 14 5 16 8 12"></polyline><line x1="12" y1="6" x2="21" y2="6"></line><line x1="12" y1="14" x2="21" y2="14"></line><line x1="12" y1="20" x2="21" y2="20"></line></svg>`,
     more: `<svg aria-hidden="true" focusable="false" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" stroke="none"><circle cx="5" cy="12" r="1.8"></circle><circle cx="12" cy="12" r="1.8"></circle><circle cx="19" cy="12" r="1.8"></circle></svg>`,
     repeat: `<svg aria-hidden="true" focusable="false" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" style="fill:none;stroke:currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="17 1 21 5 17 9"></polyline><path d="M3 11V9a4 4 0 0 1 4-4h14"></path><polyline points="7 23 3 19 7 15"></polyline><path d="M21 13v2a4 4 0 0 1-4 4H3"></path></svg>`,
@@ -754,6 +770,7 @@ function renameFolder(oldName) {
     }, (raw) => {
         const name = (raw || '').trim();
         if (!name) { showToast('נא לכתוב שם לתיקייה'); return false; }
+        if (name.length > 15) { showToast('שם התיקייה ארוך מדי (מקסימום 15 תווים)'); return false; }
         if (name === oldName) return;
         const folders = getFolders();
         if (folders.includes(name) || fixedFolders.includes(name)) { showToast('תיקייה בשם זה כבר קיימת'); return false; }
@@ -782,14 +799,33 @@ function renameFolder(oldName) {
 
 function deleteFolder(folder) {
     showConfirm(`הפתקים שבה יועברו לתיקייה הכללית.`, () => {
-        let folders = getFolders().filter(f => f !== folder);
+        const prevFolders = getFolders();
+        const prevColor = folderColors[folder];
+        const movedIds = [];
+        let folders = prevFolders.filter(f => f !== folder);
         localStorage.setItem('folders', JSON.stringify(folders));
         let notes = getNotes();
-        notes.forEach(n => { if (n.folder === folder) n.folder = 'תיקייה כללית'; });
+        notes.forEach(n => { if (n.folder === folder) { n.folder = 'תיקייה כללית'; movedIds.push(n.id); } });
         localStorage.setItem('notes', JSON.stringify(notes));
         showMainContent();
         loadFolders();
-        showToast(`התיקייה "${folder}" נמחקה`);
+        showToast(`התיקייה "${folder}" נמחקה`, 6000, {
+            label: 'ביטול',
+            onClick: () => {
+                const current = getFolders();
+                if (current.includes(folder)) return;
+                const at = Math.min(prevFolders.indexOf(folder), current.length);
+                current.splice(at < 0 ? current.length : at, 0, folder);
+                localStorage.setItem('folders', JSON.stringify(current));
+                if (prevColor) { folderColors[folder] = prevColor; localStorage.setItem('folderColors', JSON.stringify(folderColors)); }
+                const all = getNotes();
+                all.forEach(n => { if (movedIds.includes(n.id) && n.folder === 'תיקייה כללית') n.folder = folder; });
+                localStorage.setItem('notes', JSON.stringify(all));
+                loadFolders();
+                loadNotesWithoutFolderView();
+                showToast(`התיקייה "${folder}" שוחזרה`);
+            }
+        });
     }, null, { title: `למחוק את התיקייה "${folder}"?`, confirmText: 'מחק תיקייה' });
 }
 
@@ -1214,6 +1250,7 @@ function createNoteElement(note, isDarkMode) {
                         ${getAllFolderNames().map(f => `<div class="menu-item${f === note.folder ? ' is-current' : ''}" role="menuitem" tabindex="-1" data-folder="${escapeHTML(f)}"><span class="dot" style="background:${escapeHTML(folderColorDot(f))}"></span>${escapeHTML(f)}</div>`).join('')}
                     </div>
                 </div>
+                ${inTrash ? `<button class="restore-btn" title="שחזר מהאשפה" aria-label="שחזר מהאשפה">${ICONS.restore}</button>` : ''}
                 <button class="delete-btn" title="${deleteLabel}" aria-label="${deleteLabel}">${ICONS.delete}</button>
             </div>
         </div>
@@ -1265,6 +1302,8 @@ function createNoteElement(note, isDarkMode) {
     const colorPreview = div.querySelector('.note-text-color-preview');
     if (note.textColor) colorPreview.style.color = note.textColor;
 
+    const restoreBtn = div.querySelector('.restore-btn');
+    if (restoreBtn) restoreBtn.onclick = () => restoreFromTrash(note.id);
     div.querySelector('.delete-btn').onclick = () => {
         // אשפה → מחיקה צמיתה | משימות שהושלמו → אשפה | כל השאר → אשפה
         deleteNote(note.id, note.folder === 'אשפה');
@@ -1667,7 +1706,9 @@ function deleteNote(id, permanent) {
     const note = notes.find(n => n.id === id);
     let previous = null;
     if (note) {
-        previous = { folder: note.folder, color: note.color };
+        previous = { folder: note.folder, color: note.color, prevFolder: note.prevFolder };
+        if (note.folder !== 'משימות שהושלמו') note.prevFolder = note.folder;
+        note.trashedColor = note.color;
         note.folder = 'אשפה';
         note.color = folderColors['אשפה'] || '#bdc3c7';
     }
@@ -1682,12 +1723,27 @@ function deleteNote(id, permanent) {
                 if (n && n.folder === 'אשפה') {
                     n.folder = previous.folder;
                     n.color = previous.color;
+                    n.prevFolder = previous.prevFolder;
+                    delete n.trashedColor;
                     localStorage.setItem('notes', JSON.stringify(all));
                     loadNotesWithoutFolderView();
                 }
             }
         });
     }
+}
+
+function restoreFromTrash(id) {
+    const notes = getNotes();
+    const n = notes.find(x => x.id === id);
+    if (!n || n.folder !== 'אשפה') return;
+    const target = n.completed ? 'משימות שהושלמו' : restoreFolderFor(n);
+    n.folder = target;
+    n.color = n.customColor || n.trashedColor || 'green';
+    delete n.trashedColor;
+    localStorage.setItem('notes', JSON.stringify(notes));
+    loadNotesWithoutFolderView();
+    showToast(`הפתק שוחזר ל"${target}"`);
 }
 
 function showFolderBottomSheet(note, triggerEl) {
@@ -1861,6 +1917,7 @@ async function backupNotes() {
     // דסקטופ: File System Access API
     if (!('showDirectoryPicker' in window)) {
         fallbackBackupDownload(filename);
+        showToast(`הגיבוי נשמר בתיקיית ההורדות (${filename})`, 4000);
         return;
     }
     try {
@@ -1879,7 +1936,10 @@ async function backupNotes() {
         await writeBlobToDir(dirHandle, filename);
         showAlert('גיבוי נשמר בהצלחה! 💾');
     } catch (e) {
-        if (e.name !== 'AbortError') fallbackBackupDownload(filename);
+        if (e.name !== 'AbortError') {
+            fallbackBackupDownload(filename);
+            showToast(`הגיבוי נשמר בתיקיית ההורדות (${filename})`, 4000);
+        }
     }
 }
 
@@ -2269,34 +2329,43 @@ function setupDragAndResize(el) {
 
     const handle = el.querySelector('.resize-handle-bottom-right');
     if (handle) {
-        handle.onmousedown = (e) => {
+        // Pointer events cover mouse, touch and pen with one handler.
+        handle.addEventListener('pointerdown', (e) => {
+            if (e.button !== undefined && e.button !== 0) return;
             e.stopPropagation();
             e.preventDefault();
-            const startW    = el.offsetWidth;
-            const startH    = el.offsetHeight;
-            const startX    = e.clientX;
-            const startY    = e.clientY;
+            const startW = el.offsetWidth;
+            const startH = el.offsetHeight;
+            const startX = e.clientX;
+            const startY = e.clientY;
+            try { handle.setPointerCapture(e.pointerId); } catch (_) {}
             el.classList.add('is-resizing');
             const onMove = (ev) => {
+                if (ev.pointerId !== e.pointerId) return;
+                ev.preventDefault();
                 const newW = Math.max(BOARD_MIN_W, startW + (ev.clientX - startX));
                 const newH = Math.max(BOARD_MIN_H, startH + (ev.clientY - startY));
                 el.style.width  = newW + 'px';
                 el.style.height = newH + 'px';
             };
-            const onUp = () => {
-                window.removeEventListener('mousemove', onMove);
-                window.removeEventListener('mouseup',  onUp);
+            const onUp = (ev) => {
+                if (ev.pointerId !== e.pointerId) return;
+                handle.removeEventListener('pointermove', onMove);
+                handle.removeEventListener('pointerup', onUp);
+                handle.removeEventListener('pointercancel', onUp);
                 el.classList.remove('is-resizing');
                 const id = el.getAttribute('data-id');
-                if (notePositions[id]) {
-                    notePositions[id].width  = el.offsetWidth;
-                    notePositions[id].height = el.offsetHeight;
-                    localStorage.setItem('notePositions', JSON.stringify(notePositions));
-                }
+                notePositions[id] = Object.assign(
+                    { left: el.offsetLeft, top: el.offsetTop },
+                    notePositions[id] || {},
+                    { width: el.offsetWidth, height: el.offsetHeight }
+                );
+                localStorage.setItem('notePositions', JSON.stringify(notePositions));
             };
-            window.addEventListener('mousemove', onMove);
-            window.addEventListener('mouseup',  onUp);
-        };
+            handle.addEventListener('pointermove', onMove);
+            handle.addEventListener('pointerup', onUp);
+            handle.addEventListener('pointercancel', onUp);
+        });
     }
 }
 
